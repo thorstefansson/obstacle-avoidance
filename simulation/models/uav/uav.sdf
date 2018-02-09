@@ -555,7 +555,7 @@
 	
 	<include>
 		<uri>model://hokuyo_lidar</uri>
-		<pose>0 0 0.15 0 0 0</pose>
+		<pose>0.02 0 0.08 0 0 0</pose>
 	</include>
 	
 	<joint name='hokuyo_lidar_joint' type='fixed'>
@@ -565,27 +565,27 @@
 	
 	<include>
 		<uri>model://sonar_up</uri>
-		<pose>-0.05 0 0.15 0 -1.57079633 0</pose>
+		<pose>-0.05 0 0.22 0 -1.57079633 0</pose>
 	</include>
 	
 	<joint name='sonar_up_joint' type='fixed'>
-		<child>sonar_up::sonar_link</child>
+		<child>sonar_up::sonar_up_link</child>
 		<parent>base_link</parent>
 	</joint>
 	
 	<include>
 		<uri>model://sonar_down</uri>
-		<pose>-0.05 0 -0.15 0 1.57079633 0</pose>
+		<pose>-0.05 0 -0.05 0 1.57079633 0</pose>
 	</include>
 	
 	<joint name='sonar_down_joint' type='fixed'>
-		<child>sonar_down::sonar_link</child>
+		<child>sonar_down::sonar_down_link</child>
 		<parent>base_link</parent>
 	</joint>
 	
 	<include>
 		<uri>model://primesense</uri>
-		<pose>0 0 0.20 0 0 0</pose>
+		<pose>0.05 0 0.13 0 0 0</pose>
 	</include>
 	
 	<joint name='primesense_joint' type='fixed'>
@@ -595,7 +595,7 @@
 	
 	<include>
 		<uri>model://teraranger</uri>
-		<pose>0 0 -0.15 0 1.57079633 0</pose>
+		<pose>0 0 -0.05 0 1.57079633 0</pose>
 	</include>
 	
 	<joint name='teraranger_joint' type='fixed'>

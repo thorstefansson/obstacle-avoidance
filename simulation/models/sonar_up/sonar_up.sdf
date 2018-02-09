@@ -1,17 +1,18 @@
 <?xml version="1.0" ?>
 <sdf version="1.5">
-	<model name="sonar_up">
-		<!-- Hokuyo Laser -->
-		<link name="sonar_link">
+	<model name="sonar_down">
+		<link name="sonar_up_link">
 			<gravity>0</gravity>
 			<kinematic>0</kinematic>
 			<visual name="visual">
-				<geometry>
-					<mesh>
-      			<uri>model://hokuyo/meshes/hokuyo.dae</uri>
-    			</mesh>
-				</geometry>
-			</visual>
+        <pose>0 0 0 0 1.5708 0</pose>
+        <geometry>
+          <cylinder>
+            <radius>0.006</radius> <!-- diameter of sensing head -->
+            <length>0.156</length> <!-- length of sensor body -->
+          </cylinder>
+        </geometry>
+      </visual>
 
 			<inertial>
 				<mass>0.05</mass>
@@ -25,43 +26,40 @@
 				</inertia>
 			</inertial>
 			
-			<sensor type="gpu_ray" name="head_hokuyo_sensor">
+			<sensor type="ray" name="sonar">
 				<pose>0 0 0 0 0 0</pose>
-        <visualize>true</visualize>
-				<update_rate>13.7</update_rate>
+        <visualize>false</visualize>
+        <always_on>1</always_on>
 				<ray>
 					<scan>
 						<horizontal>
-							<samples>20</samples>
-							<resolution>1</resolution>
-							<min_angle>-0.174532925</min_angle>
-							<max_angle>0.174532925</max_angle>
-						</horizontal>
-						<vertical>
-							<samples>20</samples>
-							<resolution>1</resolution>
-							<min_angle>-0.174532925</min_angle>
-							<max_angle>0.174532925</max_angle>
-						</vertical>
+              <samples>25</samples>
+              <resolution>1.0</resolution>
+              <min_angle>-0.479965544</min_angle>
+              <max_angle>0.479965544</max_angle>
+            </horizontal>
+            <vertical>
+              <samples>25</samples>
+              <resolution>1</resolution>
+              <min_angle>-0.479965544</min_angle>
+              <max_angle>0.479965544</max_angle>
+            </vertical>
 					</scan>
 					<range>
-						<min>0.1</min>
-						<max>5.0</max>
-						<resolution>0.01</resolution>
+						<min>0.03</min>
+						<max>6.0</max>
+						<resolution>0.03</resolution>
 					</range>
-					<noise>
-						<type>gaussian</type>
-						<!-- Noise parameters based on published spec for Hokuyo laser
-						achieving "+-30mm" accuracy at range < 10m.  A mean of 0.0m and
-						stddev of 0.01m will put 99.7% of samples within 0.03m of the true
-						reading. -->
-						<mean>0.0</mean>
-						<stddev>0.01</stddev>
-					</noise>
 				</ray>
-				<plugin name="gazebo_ros_head_hokuyo_controller" filename="libgazebo_ros_gpu_laser.so">
-					<topicName>/sonar_up/scan</topicName>
-					<frameName>sonar_up_link</frameName>
+				
+				<plugin name="gazebo_ros_range" filename="libgazebo_ros_range.so">
+				  <gaussianNoise>0.001</gaussianNoise>
+				  <alwaysOn>true</alwaysOn>
+				  <updateRate>13.7</updateRate>
+					<topicName>/sonar_up/range</topicName>
+					<frameName>/sonar_up_link</frameName>
+					<!-- <fov>0.959931089</fov> -->
+					<radiation>ultrasound</radiation> <!-- ultrasound or infrared -->
 				</plugin>
 			</sensor>
 		</link>

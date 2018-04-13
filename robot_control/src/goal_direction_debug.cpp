@@ -931,6 +931,7 @@ bool GoalDirection::isReachable(const Vector3d & direction){ //float direction[4
 			z = -it->y + 0.13;
 			x = it->z + 0.05;
 			
+			
 			/*
 			sumx += x;
 			sumy += y;

@@ -1,6 +1,6 @@
 <?xml version="1.0" ?>
 <sdf version="1.5">
-	<model name="sonar_down">
+	<model name="sonar_up">
 		<link name="sonar_up_link">
 			<gravity>0</gravity>
 			<kinematic>0</kinematic>
@@ -9,7 +9,7 @@
         <geometry>
           <cylinder>
             <radius>0.006</radius> <!-- diameter of sensing head -->
-            <length>0.156</length> <!-- length of sensor body -->
+            <length>0.02</length> <!-- length of sensor body -->
           </cylinder>
         </geometry>
       </visual>

@@ -1,0 +1,7 @@
+<launch>
+
+	<include file = "$(find robot_setup_tf)/launch/sensors_to_spherical.launch" />
+
+	<node pkg="robot_control" type="goal_direction" name="goal_direction" output="screen" />
+
+</launch>

@@ -34,26 +34,26 @@ GoalDirection::GoalDirection(ros::NodeHandle* nodehandle):nh_(*nodehandle)
 
     Cspaceframe_activepoints = 0;
 
-	cspace_resolution = 0.02; // meters
-	cspace_width = ceil(robot_diameter / cspace_resolution);
-	cspace_half_width = ceil(robot_radius / cspace_resolution);
+    cspace_resolution = 0.02; // meters
+    cspace_width = ceil(robot_diameter / cspace_resolution);
+    cspace_half_width = ceil(robot_radius / cspace_resolution);
 
-	// just initialize as something the following:
+    // just initialize as something the following:
 
-	n_radius = 10;//robot_radius / cspace_resolution;
-	// for robot radius 0.2 and cspace_rosolution 0.02 n_radius is 10
-	//sphere_model[n_radius][n_radius][n_radius] = {0};
-	//Cspaceframe [cspace_width] [cspace_width] = {0};
+    n_radius = 10;//robot_radius / cspace_resolution;
+    // for robot radius 0.2 and cspace_rosolution 0.02 n_radius is 10
+    //sphere_model[n_radius][n_radius][n_radius] = {0};
+    //Cspaceframe [cspace_width] [cspace_width] = {0};
 
-	// just initialize as something the following:
-	sonar_up_limit = 6;
-	range_up = 6;
-	sonar_down_limit = 6;
-	range_down = 0;
+    // just initialize as something the following:
+    sonar_up_limit = 6;
+    range_up = 6;
+    sonar_down_limit = 6;
+    range_down = 0;
 
-	cout <<"Going into initialize Sphere function" << endl;
-	initializeSphere();
-	cout <<"done running initializeSphere" << endl;
+    cout <<"Going into initialize Sphere function" << endl;
+    initializeSphere();
+    cout <<"done running initializeSphere" << endl;
 
 
     // can also do tests/waits to make sure all required services, topics, etc are alive
@@ -223,10 +223,21 @@ void GoalDirection::initializeSphere()
 		ivalue += cspace_resolution;
 	}
 
+        //let's write out the sphere model:
+        /*
+        for (int i = 0 ; i < n_radius ; i++){
+                for ( int j = 0 ; j < n_radius ; j++){
+                        for (int k = 0 ; k < n_radius; k ++){
+                            cout << sphere_model[i][j][k];
+                        }
+                        cout << endl;
+                }
+                cout<< endl << endl;
+        }*/
+
 	//lets write out our frame:
 
 	cout <<"Cspaceframe: " << endl;
-
 	for(int i = 0; i < cspace_width ; i++){
 		for (int j = 0; j<cspace_width; j++){
 			cout<< Cspaceframe[i][j];
@@ -912,7 +923,7 @@ bool GoalDirection::isReachable(const Vector3d & direction){ //float direction[4
 	for(pcl::PointCloud<pcl::PointXYZ>::iterator it = camera_cloud.begin(); it != camera_cloud.end(); it++){
 		//cout << "in loop" << endl;
 
-		if(!isnan(it->y)){
+                if(isfinite(it->z)){ //!isnan(it->y) ){//&& !isnan(it->x) && !isnan(it->y)){
 			//Since z is forward, y down and x to the right:
 			// and we want x forward, y left and z up:
 			y = -(it->x);
@@ -962,6 +973,8 @@ bool GoalDirection::isReachable(const Vector3d & direction){ //float direction[4
 				newColumn2.push_back(new_z);
 				obstacle_points_direction_frame.push_back(newColumn2);
 
+                                //cout << "point: " << newer_x << " " << new_y << " " << new_z << " ";
+
 				// ----------------------------------Now put expanded obstacle points into the Cspace-------------------------------
 				//This code is very long for the sake of making it a little faster, i.e. checking some conditions before we go into the loops
 
@@ -978,10 +991,8 @@ bool GoalDirection::isReachable(const Vector3d & direction){ //float direction[4
 
 
 
-
-
 				if (obstacle_point_center_x + cspace_half_width < cspace_length && obstacle_point_center_x - cspace_half_width > 0 ){
-										if(obstacle_point_center_y < 0){
+                                        if(obstacle_point_center_y < 0){
 						// This means the center is to the left of the matrix
 						// so we only have to fill up the right part of the sphere
 						if (obstacle_point_center_z < 0){
@@ -995,30 +1006,6 @@ bool GoalDirection::isReachable(const Vector3d & direction){ //float direction[4
 							corner_point_z = obstacle_point_center_z + cspace_half_width;
 							corner_point_y = obstacle_point_center_y + cspace_half_width;
 
-							// I guess we also have to check if the sphere goes out of bounds on either side length wise 
-
-							//we can then iterate from the bottom left half of the matrix... 		
-							/*
-							Ah ya know, fuck this, let's just have an if statement that checks every time for now.. 
-							if(obstacle_point_center_x - cspace_half_width< 0){
-								// now we have to watch out so we don't get out of bounds :>P
-								for(int y_itr = 0; y_itr < corner_point_y; y_itr++){
-									for(int z_itr = 0; z_itr < corner_point_z; z_itr ++ ){
-										// we also have to iterate over this in x direction.. 
-										count = 0;
-										for(int x_itr = obstacle_point_center_x; x_itr < obstacle_point_center_x + cspace_half_width ; x_itr++){
-											if(sphere_model[count][-obstacle_point_center_y+y_itr][-obstacle_point_center_z+z_itr] == 1){
-												Cspace[x_itr][y_itr][z_itr] = 1;
-												if(obstacle_point_center_x- count >=0){
-													Cspace[obstacle_point_center_x- count][y_itr][z_itr]=1;
-												}
-											}
-										count++;
-										}
-									}
-								}
-							}
-							*/
 							for(int y_itr = 0; y_itr < corner_point_y; y_itr++){
 								for(int z_itr = 0; z_itr < corner_point_z; z_itr ++ ){
 									// we also have to iterate over this in x direction.. 
@@ -1280,8 +1267,7 @@ bool GoalDirection::isReachable(const Vector3d & direction){ //float direction[4
 											
 											Cspace[x_itr][y_itr][z_itr] = 1;
 											if(obstacle_point_center_y + county < cspace_width) Cspace[x_itr][obstacle_point_center_y + county][z_itr] = 1;
-										 
-											
+
 											Cspace[obstacle_point_center_x- countx][y_itr][z_itr]=1;
 											if(obstacle_point_center_y + county < cspace_width){
 												Cspace[obstacle_point_center_x- countx][obstacle_point_center_y + county][z_itr]=1;
@@ -1365,47 +1351,48 @@ bool GoalDirection::isReachable(const Vector3d & direction){ //float direction[4
 						// gerum bara einfaldan koda fyrir thetta til ad byrja med, er ordinn ansi threyttur a thessu...
 
 						for(county = 0; county< cspace_half_width ; county ++){
-							for(county = 0; county< cspace_half_width ; county ++){
+                                                        for(countz = 0; countz< cspace_half_width ; countz ++){
 								for(countx = 0; countx< cspace_half_width ; countx ++){
+
 									if(sphere_model[countx][county][countz] == 1){
 
-										if(obstacle_point_center_x+countx<cspace_length){
-											if(obstacle_point_center_y+county<cspace_width){
-												if(obstacle_point_center_z+countz<cspace_width){
-													Cspace[obstacle_point_center_x+countx][obstacle_point_center_y+county][obstacle_point_center_z+countz] =1;
-												}
-												if(obstacle_point_center_z-countz >=0){
-													Cspace[obstacle_point_center_x+countx][obstacle_point_center_y+county][obstacle_point_center_z-countz] =1;
-												}
-											}
-											if(obstacle_point_center_y-county >=0){
-												if(obstacle_point_center_z+countz<cspace_width){
-													Cspace[obstacle_point_center_x+countx][obstacle_point_center_y-county][obstacle_point_center_z+countz] =1;
-												}
-												if(obstacle_point_center_z-countz >=0){
-													Cspace[obstacle_point_center_x+countx][obstacle_point_center_y-county][obstacle_point_center_z-countz] =1;
-												}
-											}
 
-										}
-										if(obstacle_point_center_x- countx>0){
-											if(obstacle_point_center_y+county<cspace_width){
-												if(obstacle_point_center_z+countz<cspace_width){
-													Cspace[obstacle_point_center_x-countx][obstacle_point_center_y+county][obstacle_point_center_z+countz] =1;
-												}
-												if(obstacle_point_center_z-countz >=0){
-													Cspace[obstacle_point_center_x-countx][obstacle_point_center_y+county][obstacle_point_center_z-countz] =1;
-												}
-											}
-											if(obstacle_point_center_y-county >=0){
-												if(obstacle_point_center_z+countz<cspace_width){
-													Cspace[obstacle_point_center_x-countx][obstacle_point_center_y-county][obstacle_point_center_z+countz] =1;
-												}
-												if(obstacle_point_center_z-countz >=0){
-													Cspace[obstacle_point_center_x-countx][obstacle_point_center_y-county][obstacle_point_center_z-countz] =1;
-												}
-											}
-										}
+                                                                                if(obstacle_point_center_y+county<cspace_width){
+                                                                                        if(obstacle_point_center_z+countz<cspace_width){
+                                                                                                Cspace[obstacle_point_center_x+countx][obstacle_point_center_y+county][obstacle_point_center_z+countz] =1;
+                                                                                        }
+                                                                                        if(obstacle_point_center_z-countz >=0){
+                                                                                                Cspace[obstacle_point_center_x+countx][obstacle_point_center_y+county][obstacle_point_center_z-countz] =1;
+                                                                                        }
+                                                                                }
+                                                                                if(obstacle_point_center_y-county >=0){
+                                                                                        if(obstacle_point_center_z+countz<cspace_width){
+                                                                                                Cspace[obstacle_point_center_x+countx][obstacle_point_center_y-county][obstacle_point_center_z+countz] =1;
+                                                                                        }
+                                                                                        if(obstacle_point_center_z-countz >=0){
+                                                                                                Cspace[obstacle_point_center_x+countx][obstacle_point_center_y-county][obstacle_point_center_z-countz] =1;
+                                                                                        }
+                                                                                }
+
+
+
+                                                                                if(obstacle_point_center_y+county<cspace_width){
+                                                                                        if(obstacle_point_center_z+countz<cspace_width){
+                                                                                                Cspace[obstacle_point_center_x-countx][obstacle_point_center_y+county][obstacle_point_center_z+countz] =1;
+                                                                                        }
+                                                                                        if(obstacle_point_center_z-countz >=0){
+                                                                                                Cspace[obstacle_point_center_x-countx][obstacle_point_center_y+county][obstacle_point_center_z-countz] =1;
+                                                                                        }
+                                                                                }
+                                                                                if(obstacle_point_center_y-county >=0){
+                                                                                        if(obstacle_point_center_z+countz<cspace_width){
+                                                                                                Cspace[obstacle_point_center_x-countx][obstacle_point_center_y-county][obstacle_point_center_z+countz] =1;
+                                                                                        }
+                                                                                        if(obstacle_point_center_z-countz >=0){
+                                                                                                Cspace[obstacle_point_center_x-countx][obstacle_point_center_y-county][obstacle_point_center_z-countz] =1;
+                                                                                        }
+                                                                                }
+
 									}
 								}
 							}
@@ -1821,7 +1808,7 @@ bool GoalDirection::isReachable(const Vector3d & direction){ //float direction[4
 						// gerum bara einfaldan koda fyrir thetta til ad byrja med, er ordinn ansi threyttur a thessu...
 
 						for(county = 0; county< cspace_half_width ; county ++){
-							for(county = 0; county< cspace_half_width ; county ++){
+                                                        for(countz = 0; countz< cspace_half_width ; countz ++){
 								for(countx = 0; countx< cspace_half_width ; countx ++){
 									if(sphere_model[countx][county][countz] == 1){
 
@@ -1876,6 +1863,7 @@ bool GoalDirection::isReachable(const Vector3d & direction){ //float direction[4
 	//cout << "count_points_within : " << count_points_within << endl;
 
 		//-------------------Transform again to point cloud for visualizing in rviz:------------------------
+        // /*
 	PointCloud::Ptr msg (new PointCloud);
 	msg->header.frame_id = "base_link";
 	msg->height = 1;
@@ -1889,7 +1877,7 @@ bool GoalDirection::isReachable(const Vector3d & direction){ //float direction[4
 	//cout << "Cspace length: " <<  sizeof Cspace / sizeof Cspace[0] << endl; // 2 rows  
 	//cout << "cspacesomething : " << sizeof Cspace[0]/ sizeof(int) << endl;
   	//int cols = sizeof Cspace[0] / sizeof(0); // 5 cols
-	
+        // /*
 	countx =0;
 	for (int y_itr=0; y_itr< cspace_width; y_itr++){
 		for (int z_itr=0;z_itr<cspace_width; z_itr++){
@@ -1916,8 +1904,8 @@ bool GoalDirection::isReachable(const Vector3d & direction){ //float direction[4
   	pcl::toROSMsg(*msg, output);
   	// Publish the data
   	pub_Cspace.publish (output);
-
   	//cout << "done with filling occupancy cloud" << endl;
+        // */
 
   	//------------------------------------Now use graph search to find if subgoal is reachable:--------------------------------------
 
@@ -2082,20 +2070,20 @@ bool GoalDirection::isReachable(const Vector3d & direction){ //float direction[4
 				  		countx++;
 						}
 					}
-				}
-				cout << "count is: "<< countx <<  endl;
+                            }
+                            cout << "count is: "<< countx <<  endl;
 			    if(countx == Cspaceframe_activepoints){
 			    	return true;
 			    }
-		  		else{
-		  			cout << "subgoal not reachable" << endl;
-		  			return false;	
-		  		} 
+                            else{
+                                cout << "subgoal not reachable" << endl;
+                                return false;
+                            }
 
-		  		break;
-		  		//condition =false;
-		  	}
-	  	}
+                            break;
+                            //condition =false;
+                    }
+                }
 	}
 
 }
@@ -2199,6 +2187,15 @@ int main(int argc, char** argv)
     ROS_INFO("main: going into spin; let the callbacks do all the work");
 
     //Wait a second, maybe do all the work here instead... 
+
+
+
+
+
+
+
+
+
 
     ros::spin();
 	return 0;

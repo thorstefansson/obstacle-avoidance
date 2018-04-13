@@ -1410,7 +1410,7 @@ bool GoalDirection::isReachable(const Vector3d & direction){ //float direction[4
 					// gerum bara einfaldan koda fyrir thetta til ad byrja med, er ordinn ansi threyttur a thessu...
 
 					for(county = 0; county< cspace_half_width ; county ++){
-						for(county = 0; county< cspace_half_width ; county ++){
+                                                for(countz = 0; countz< cspace_half_width ; countz ++){
 							for(countx = 0; countx< cspace_half_width ; countx ++){
 								if(sphere_model[countx][county][countz] == 1){
 

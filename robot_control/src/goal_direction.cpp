@@ -33,6 +33,7 @@ GoalDirection::GoalDirection(ros::NodeHandle* nodehandle):nh_(*nodehandle)
     spherical_matrix_width = 120;
 
     Cspaceframe_activepoints = 0;
+    goal_point = false;
 
     cspace_resolution = 0.02; // meters
     cspace_width = ceil(robot_diameter / cspace_resolution);
@@ -547,255 +548,262 @@ void GoalDirection::goalPositionCallback(const geometry_msgs::Vector3ConstPtr& i
 	goal_position.push_back(input->z);
 	*/
 	//cout<<"here 1"<< endl;
-	geometry_msgs::PoseStamped set_pose;
+        goal_point = true;
 
-	direction_vector = goal_position - robot_position;
+        geometry_msgs::PoseStamped set_pose;
 
-	//cout<<"here 2"<< endl;
-	//cout << "robot_vector: " << robot_position[0] << " " << robot_position[1] <<" " << robot_position[2] << endl;
-	//cout << "goal_position: " << goal_position[0] << " " << goal_position[1] <<" " << goal_position[2] << endl;
+        direction_vector = goal_position - robot_position;
 
-	//cout << "direction_vector: " << direction_vector[0] << " " << direction_vector[1] <<" " << direction_vector[2] << endl;
+        //cout<<"here 2"<< endl;
+        //cout << "robot_vector: " << robot_position[0] << " " << robot_position[1] <<" " << robot_position[2] << endl;
+        //cout << "goal_position: " << goal_position[0] << " " << goal_position[1] <<" " << goal_position[2] << endl;
 
-	double xy_length_of_direction_vector = sqrt(pow(direction_vector[0],2) + pow(direction_vector[1],2));
+        //cout << "direction_vector: " << direction_vector[0] << " " << direction_vector[1] <<" " << direction_vector[2] << endl;
 
-	
-	set_pose.header.frame_id = "map";
-	set_pose.header.stamp = ros::Time::now();
-
-	//cout<<"here 3"<< endl;
+        double xy_length_of_direction_vector = sqrt(pow(direction_vector[0],2) + pow(direction_vector[1],2));
 
 
-   vector<distance_and_index> distance_index_vector;
-   vector<distance_and_index> :: iterator vitr;
-   //vector<pair<int,int>> matrix_indices_vector;
-   vector< vector<double> > subgoal_xyz; //indeces_xyz;
-   double r, rho, phi, theta;
-	
-   double x1,y1,z1;
+        set_pose.header.frame_id = "map";
+        set_pose.header.stamp = ros::Time::now();
 
-	//for the purposes of visualization test in rviz, remove later maybe:
-	//if(robot_position[2]<0.4){//input->pose.position.z < 0.3){
-	// to get rid of drift, set fixed position:
-	set_pose.pose.position.x = 0;
-	set_pose.pose.position.y = 0;
-	set_pose.pose.position.z = 0.4;
-	//}
-	//turn robot in xy plane in direction of goal 
-
-		//find desired degrees in xy plane:
-		
-		//usually x forward, y left and z up:
-		// so maybe do like this:?
-
-	theta = acos(direction_vector[0]/xy_length_of_direction_vector);
-	if(direction_vector[1] < 0){
-		theta = -theta;
-	}
-
-	//and we want to turn around z axis so our quaternion coordinates become:
-	double x= 0;
-	double y = 0;
-	double z = 1*sin(theta/2);
-	double w = cos(theta/2);
-
-	set_pose.pose.orientation.x = 0;
-	set_pose.pose.orientation.y = 0;
-	set_pose.pose.orientation.z = z;
-	set_pose.pose.orientation.w = w;
-
-	pub_desired_position_.publish(set_pose);
-
-	//cout<<"what's happening"<< endl;
-	//if the goal is not directly above or below the robot:
-	if(abs(direction_vector[2])/ xy_length_of_direction_vector < 2.8){
-
-		
-
-		bool reachable;
-		//cout << "theta " << theta << endl;
-		//cout << "difference in orientation: " << abs(z - robot_orientation[2]) + abs(w - robot_orientation[3]) << endl; 
-		//cout << "desired quaternion coordinates: " << "x: " << x << "y: " <<y << "z: " << z <<"w: " <<w << endl;
-		//cout << "actual quaternion coordinates: " << "x: " << robot_orientation[0] << "y: " <<robot_orientation[1] << "z: " 
-		//<< robot_orientation[2] <<"w: " <<robot_orientation[3] << endl;
-
-		// only check if reachable if within camera limits.. 
-		// vertical field of view of camera only 45 degrees so.. 
-		if((abs(z - robot_orientation[2]) + abs(w - robot_orientation[3])  < 0.05 || abs(z + robot_orientation[2]) + abs(w + robot_orientation[3]) < 0.05)
-			&& abs(direction_vector[2])/ xy_length_of_direction_vector < 0.36){ // for within 20 degrees...
-			//cout << "going into isReachable function" << endl ;
-			// To get the direction in the same frame as the robot we need to turn the direction vector
-			// to do this we find the inverse of the robot quaternion and use it to turn the direction vector
-			// why am I using the inverse? fml
-
-			// inverse of robot quaternion:
-			Vector3d robot_orientation_inverse_v;
-			float robot_orientation_inverse_w;
-
-			float robot_orientation_sum_squared = pow(robot_orientation[0],2) + pow(robot_orientation[1],2) + pow(robot_orientation[2],2) 
-			+pow(robot_orientation[3],2);
-
-			robot_orientation_inverse_w = robot_orientation[3] / robot_orientation_sum_squared;
-
-			robot_orientation_inverse_v[0] = -robot_orientation[0] / robot_orientation_sum_squared;
-			robot_orientation_inverse_v[1] = -robot_orientation[1] / robot_orientation_sum_squared;
-			robot_orientation_inverse_v[2] = -robot_orientation[2] / robot_orientation_sum_squared;
-
-			Vector3d direction_robot_frame = direction_vector + 2*robot_orientation_inverse_w*cross(robot_orientation_inverse_v, direction_vector) + 
-			2*cross(robot_orientation_inverse_v, cross(robot_orientation_inverse_v, direction_vector));
+        //cout<<"here 3"<< endl;
 
 
-			//cout << "direction_robot_frame: " << direction_robot_frame << endl;
+       vector<distance_and_index> distance_index_vector;
+       vector<distance_and_index> :: iterator vitr;
+       //vector<pair<int,int>> matrix_indices_vector;
+       vector< vector<double> > subgoal_xyz; //indeces_xyz;
+       double r, rho, phi, theta;
 
-			reachable = isReachable(direction_robot_frame);
-			cout << "Reachable: " << reachable << endl;
+       double x1,y1,z1;
 
-			if(!reachable){
-				cout<< "not reachable" << endl;
-				//find which sub goal is closest to goal.
-				// if it is reachable choose that sub goal; otherwise check the next one. 
-				//hmm what is the best way to do this...
+        //cout<<"what's happening"<< endl;
+        //if the goal is not directly above or below the robot:
+        if(abs(direction_vector[2])/ xy_length_of_direction_vector < 2.8){
 
-				//Start with transforming the sub goals to cartesian coordinates... 
-				//or wait, we can also just transform the goal point to spherical coordinates.. 
-				//or just neither dumbass..
+                //turn robot in xy plane in direction of goal
 
-				Vector3d subgoal_global_frame, subgoal_robot_frame, robot_orientation_v;
-				float robot_orientation_w;
+                //find desired degrees in xy plane:
 
-				robot_orientation_v [0] = robot_orientation[0];
-				robot_orientation_v [1] = robot_orientation[1];
-				robot_orientation_v [2] = robot_orientation[2];
-				robot_orientation_w = robot_orientation[3];
+                //usually x forward, y left and z up:
+                // so maybe do like this:?
+
+                double theta = acos(direction_vector[0]/xy_length_of_direction_vector);
+                if(direction_vector[1] < 0){
+                        theta = -theta;
+                }
+
+                //and we want to turn around z axis so our quaternion coordinates become:
+                double x= 0;
+                double y = 0;
+                double z = 1*sin(theta/2);
+                double w = cos(theta/2);
+
+                bool reachable;
+                //cout << "theta " << theta << endl;
+                //cout << "difference in orientation: " << abs(z - robot_orientation[2]) + abs(w - robot_orientation[3]) << endl;
+                //cout << "desired quaternion coordinates: " << "x: " << x << "y: " <<y << "z: " << z <<"w: " <<w << endl;
+                //cout << "actual quaternion coordinates: " << "x: " << robot_orientation[0] << "y: " <<robot_orientation[1] << "z: "
+                //<< robot_orientation[2] <<"w: " <<robot_orientation[3] << endl;
+
+                // only check if reachable if within camera limits..
+                // vertical field of view of camera only 45 degrees so..
+                //cout << "checking if goal within camera limits, line 600. ";
+                if((abs(z - robot_orientation[2]) + abs(w - robot_orientation[3])  < 0.05 || abs(z + robot_orientation[2]) + abs(w + robot_orientation[3]) < 0.05)
+                        && abs(direction_vector[2])/ xy_length_of_direction_vector < 0.36){ // for within 20 degrees...
+                        //cout << "it is within limits. ";
+                        //cout << "going into isReachable function" << endl ;
+                        // To get the direction in the same frame as the robot we need to turn the direction vector
+                        // to do this we find the inverse of the robot quaternion and use it to turn the direction vector
+                        // why am I using the inverse? fml
+
+                        // inverse of robot quaternion:
+                        Vector3d robot_orientation_inverse_v;
+                        float robot_orientation_inverse_w;
+
+                        float robot_orientation_sum_squared = pow(robot_orientation[0],2) + pow(robot_orientation[1],2) + pow(robot_orientation[2],2)
+                        +pow(robot_orientation[3],2);
+
+                        robot_orientation_inverse_w = robot_orientation[3] / robot_orientation_sum_squared;
+
+                        robot_orientation_inverse_v[0] = -robot_orientation[0] / robot_orientation_sum_squared;
+                        robot_orientation_inverse_v[1] = -robot_orientation[1] / robot_orientation_sum_squared;
+                        robot_orientation_inverse_v[2] = -robot_orientation[2] / robot_orientation_sum_squared;
+
+                        Vector3d direction_robot_frame = direction_vector + 2*robot_orientation_inverse_w*cross(robot_orientation_inverse_v, direction_vector) +
+                        2*cross(robot_orientation_inverse_v, cross(robot_orientation_inverse_v, direction_vector));
+
+
+                        //cout << "direction_robot_frame: " << direction_robot_frame << endl;
+
+
+                        reachable = isReachable(direction_robot_frame);
+                        cout << "Reachable: " << reachable << endl;
+
+                        if(!reachable){
+                                cout<< "not reachable" << endl;
+                                //find which sub goal is closest to goal.
+                                // if it is reachable choose that sub goal; otherwise check the next one.
+                                //hmm what is the best way to do this...
+
+                                //Start with transforming the sub goals to cartesian coordinates...
+                                //or wait, we can also just transform the goal point to spherical coordinates..
+                                //or just neither dumbass..
+
+                                Vector3d subgoal_global_frame, subgoal_robot_frame, robot_orientation_v;
+                                float robot_orientation_w;
+
+                                robot_orientation_v [0] = robot_orientation[0];
+                                robot_orientation_v [1] = robot_orientation[1];
+                                robot_orientation_v [2] = robot_orientation[2];
+                                robot_orientation_w = robot_orientation[3];
 
 
 
-				// anyways
-				countx = 0;
-				for (int m = 0; m < spherical_matrix_height; m++){
-					for (int n = 0; n < spherical_matrix_width; n++){
-						if(subgoal_matrix[m][n] > 0){
-							vector <double> row;
-							
-
-							/*theta = ((m - 29) *3 - 1.5)*pi/180;
-							phi = ((n-59)*3 - 1.5)*pi/180;
-							x1 = subgoal_matrix[m][n]*sin(phi)*cos(theta);
-							y1= subgoal_matrix[m][n]*sin(phi)*sin(theta);
-							z1= subgoal_matrix[m][n]*cos(phi);*/
+                              //cout << "done sorting sub goals by distance to goal, 715. " ;   // anyways
+                                countx = 0;
+                                for (int m = 0; m < spherical_matrix_height; m++){
+                                        for (int n = 0; n < spherical_matrix_width; n++){
+                                                if(subgoal_matrix[m][n] > 0){
+                                                        vector <double> row;
 
 
-							//NEED to account for orientation of robot w.r.t. global frame..... !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-
-							// Also, currently we are putting direction of goal in global frame into isreachable function
-							// but the direction of sub goals in the robot frame into that function.... !!! this we need to fix
-							rho = subgoal_matrix[m][n];
-							theta = n *  pi / 60 - pi;
-							phi = m * pi / 60 - pi/2;
-
-							r = rho * cos(phi);				
-							x1 = r * cos(theta);
-							y1 = r * sin(theta);
-							z1 = rho * sin(phi);
-
-							subgoal_robot_frame[0] = x1;
-							subgoal_robot_frame[1] = y1;
-							subgoal_robot_frame[2] = z1;
-							
-							// the subgoal is not truly in global frame since we also have to add the position of the robot
-							subgoal_global_frame = subgoal_robot_frame + 2*robot_orientation_w*cross(robot_orientation_v, subgoal_robot_frame) + 
-							2*cross(robot_orientation_v, cross(robot_orientation_v, subgoal_robot_frame));
-
-							// store matrix value
-							double distance_sq = pow(goal_position[0] - (subgoal_global_frame[0]+robot_position[0]),2) + 
-							pow(goal_position[1] - (subgoal_global_frame[1]+robot_position[1]), 2) + 
-							pow(goal_position[2] - (subgoal_global_frame[2]+robot_position[2]), 2);
-
-							//now push back to vector.. 
-							distance_index_vector.push_back(make_pair(distance_sq, countx));
-							// push back the m and n values as well..
-							//matrix_indices_vector.push_back(make_pair(m,n));
-							
-							row.push_back((double)m);
-							row.push_back((double)n);
-							row.push_back(x1);
-							row.push_back(y1);
-							row.push_back(z1);
-							
-							subgoal_xyz.push_back(row);
-							countx++;
-						}
-					}
-				}
-
-				//cout << "here" << endl;
-
-				// sort stuff 
-				sort(distance_index_vector.begin(), distance_index_vector.end(), comparator());
-
-				// print shit to see if works:
-
-				//for(distance_and_index p : distance_index_vector){
-				/*
-				for(vitr = distance_index_vector.begin(); vitr != distance_index_vector.end(); ++vitr ){
-					cout << vitr->first << " " << vitr->second << " | ";
-				}
-				cout << endl;*/
-				for(vector<int>::size_type vecitr = 0; vecitr != distance_index_vector.size(); vecitr++){
-					// make vector to 
-					subgoal_vector[0] = subgoal_xyz[distance_index_vector[vecitr].second][2];
-					subgoal_vector[1] = subgoal_xyz[distance_index_vector[vecitr].second][3];
-					subgoal_vector[2] = subgoal_xyz[distance_index_vector[vecitr].second][4];
-					//if subgoal reachable:
-					if(isReachable(subgoal_vector)){
-						// This subgoal is reachable and therefore the selected subgoal
-
-						cout <<"subgoal at squared and normal distance: " << distance_index_vector[vecitr].first<< "  " 
-						<< sqrt(distance_index_vector[vecitr].first) << " chosen" << endl;
-						//DO STUFF HERE!!!!
-
-						// maybe turn into point cloud for debug reasons...
-
-						PointCloud::Ptr msg (new PointCloud);
-						msg->header.frame_id = "base_link";
-						msg->height = 1;
-						msg->width = 1;
-						
-						x = subgoal_vector[0];
-						y = subgoal_vector[1];
-						z = subgoal_vector[2];
-						msg->points.push_back (pcl::PointXYZ(x,y,z));
-
-						// Convert to ROS data type
-					  	sensor_msgs::PointCloud2 output;
-					  	pcl::toROSMsg(*msg, output);
-					  	// Publish the data
-					  	pub_selected_subgoal.publish (output);
+                                                        /*theta = ((m - 29) *3 - 1.5)*pi/180;
+                                                        phi = ((n-59)*3 - 1.5)*pi/180;
+                                                        x1 = subgoal_matrix[m][n]*sin(phi)*cos(theta);
+                                                        y1= subgoal_matrix[m][n]*sin(phi)*sin(theta);
+                                                        z1= subgoal_matrix[m][n]*cos(phi);*/
 
 
-						break;
-					}
+                                                        //NEED to account for orientation of robot w.r.t. global frame..... !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
-				}
-				//cout << endl;
+                                                        // Also, currently we are putting direction of goal in global frame into isreachable function
+                                                        // but the direction of sub goals in the robot frame into that function.... !!! this we need to fix
+                                                        rho = subgoal_matrix[m][n];
+                                                        theta = n *  pi / 60 - pi;
+                                                        phi = m * pi / 60 - pi/2;
 
-				pub_desired_position_.publish(set_pose);
-			}
-		} 	
-		else reachable = false;
+                                                        r = rho * cos(phi);
+                                                        x1 = r * cos(theta);
+                                                        y1 = r * sin(theta);
+                                                        z1 = rho * sin(phi);
 
+                                                        subgoal_robot_frame[0] = x1;
+                                                        subgoal_robot_frame[1] = y1;
+                                                        subgoal_robot_frame[2] = z1;
 
-		//cout << "yolo" << endl;
-		//now to keep the robot in same place but only turn it:
+                                                        // the subgoal is not truly in global frame since we also have to add the position of the robot
+                                                        subgoal_global_frame = subgoal_robot_frame + 2*robot_orientation_w*cross(robot_orientation_v, subgoal_robot_frame) +
+                                                        2*cross(robot_orientation_v, cross(robot_orientation_v, subgoal_robot_frame));
 
-		//set_pose.pose.position =  input->pose.position;
-		/*set_pose.pose.position.x = robot_position[0];
-		set_pose.pose.position.y = robot_position[1];
-		set_pose.pose.position.z = robot_position[2];*/
+                                                        // store matrix value
+                                                        double distance_sq = pow(goal_position[0] - (subgoal_global_frame[0]+robot_position[0]),2) +
+                                                        pow(goal_position[1] - (subgoal_global_frame[1]+robot_position[1]), 2) +
+                                                        pow(goal_position[2] - (subgoal_global_frame[2]+robot_position[2]), 2);
+
+                                                        //now push back to vector..
+                                                        distance_index_vector.push_back(make_pair(distance_sq, countx));
+                                                        // push back the m and n values as well..
+                                                        //matrix_indices_vector.push_back(make_pair(m,n));
+
+                                                        row.push_back((double)m);
+                                                        row.push_back((double)n);
+                                                        row.push_back(x1);
+                                                        row.push_back(y1);
+                                                        row.push_back(z1);
+
+                                                        subgoal_xyz.push_back(row);
+                                                        countx++;
+                                                }
+                                        }
+                                }
+
+                                //cout << "here" << endl;
+
+                                // sort stuff
+                                sort(distance_index_vector.begin(), distance_index_vector.end(), comparator());
 
 
 
-	}
+                                // print shit to see if works:
+
+                                //for(distance_and_index p : distance_index_vector){
+                                /*
+                                for(vitr = distance_index_vector.begin(); vitr != distance_index_vector.end(); ++vitr ){
+                                        cout << vitr->first << " " << vitr->second << " | ";
+                                }
+                                cout << endl;
+*/
+                                for(vector<int>::size_type vecitr = 0; vecitr != distance_index_vector.size(); vecitr++){
+                                        // make vector to
+                                        subgoal_vector[0] = subgoal_xyz[distance_index_vector[vecitr].second][2];
+                                        subgoal_vector[1] = subgoal_xyz[distance_index_vector[vecitr].second][3];
+                                        subgoal_vector[2] = subgoal_xyz[distance_index_vector[vecitr].second][4];
+                                        //if subgoal reachable:
+
+                                        //if(vecitr == distance_index_vector.size()-1) cout  << "Last sub goal " ;
+                                        if(isReachable(subgoal_vector)){
+                                                // This subgoal is reachable and therefore the selected subgoal
+
+                                                //cout <<"subgoal at squared and normal distance: " << distance_index_vector[vecitr].first<< "  "
+                                                //<< sqrt(distance_index_vector[vecitr].first) << " chosen" << endl;
+                                                //DO STUFF HERE!!!!
+
+                                                // maybe turn into point cloud for debug reasons...
+
+                                                PointCloud::Ptr msg (new PointCloud);
+                                                msg->header.frame_id = "base_link";
+                                                msg->height = 1;
+                                                msg->width = 1;
+
+                                                x = subgoal_vector[0];
+                                                y = subgoal_vector[1];
+                                                z = subgoal_vector[2];
+                                                msg->points.push_back (pcl::PointXYZ(x,y,z));
+
+                                                // Convert to ROS data type
+                                                sensor_msgs::PointCloud2 output;
+                                                pcl::toROSMsg(*msg, output);
+                                                // Publish the data
+                                                pub_selected_subgoal.publish (output);
+
+                                                //delete msg;
+
+
+                                                break;
+                                        }
+
+                                }
+                                cout << endl;
+                        }
+                }
+                else reachable = false;
+
+
+                //cout << "yolo" << endl;
+                //now to keep the robot in same place but only turn it:
+
+                //set_pose.pose.position =  input->pose.position;
+                /*set_pose.pose.position.x = robot_position[0];
+                set_pose.pose.position.y = robot_position[1];
+                set_pose.pose.position.z = robot_position[2];*/
+
+
+                //for the purposes of visualization test in rviz, remove later maybe:
+                //if(robot_position[2]<0.4){//input->pose.position.z < 0.3){
+                // to get rid of drift, set fixed position:
+                set_pose.pose.position.x = 0;
+                set_pose.pose.position.y = 0;
+                set_pose.pose.position.z = 0.4;
+                //}
+
+                set_pose.pose.orientation.x = 0;
+                set_pose.pose.orientation.y = 0;
+                set_pose.pose.orientation.z = z;
+                set_pose.pose.orientation.w = w;
+        }
+
+        pub_desired_position_.publish(set_pose);
 
 	
 	//cout << "direction_vector: " << direction_vector << endl;
@@ -1414,30 +1422,6 @@ bool GoalDirection::isReachable(const Vector3d & direction){ //float direction[4
 							corner_point_z = obstacle_point_center_z + cspace_half_width;
 							corner_point_y = obstacle_point_center_y + cspace_half_width;
 
-							// I guess we also have to check if the sphere goes out of bounds on either side length wise 
-
-							//we can then iterate from the bottom left half of the matrix... 		
-							/*
-							Ah ya know, fuck this, let's just have an if statement that checks every time for now.. 
-							if(obstacle_point_center_x - cspace_half_width< 0){
-								// now we have to watch out so we don't get out of bounds :>P
-								for(int y_itr = 0; y_itr < corner_point_y; y_itr++){
-									for(int z_itr = 0; z_itr < corner_point_z; z_itr ++ ){
-										// we also have to iterate over this in x direction.. 
-										count = 0;
-										for(int x_itr = obstacle_point_center_x; x_itr < obstacle_point_center_x + cspace_half_width ; x_itr++){
-											if(sphere_model[count][-obstacle_point_center_y+y_itr][-obstacle_point_center_z+z_itr] == 1){
-												Cspace[x_itr][y_itr][z_itr] = 1;
-												if(obstacle_point_center_x- count >=0){
-													Cspace[obstacle_point_center_x- count][y_itr][z_itr]=1;
-												}
-											}
-										count++;
-										}
-									}
-								}
-							}
-							*/
 							for(int y_itr = 0; y_itr < corner_point_y; y_itr++){
 								for(int z_itr = 0; z_itr < corner_point_z; z_itr ++ ){
 									// we also have to iterate over this in x direction.. 
@@ -1484,7 +1468,10 @@ bool GoalDirection::isReachable(const Vector3d & direction){ //float direction[4
 
 							if(obstacle_point_center_z< cspace_half_width){
 								// this means we are below middle
-								// so we need to continuously check if the lower part of our sphere is out of bounds
+
+                                                            // I guess we also have to check if the sphere goes out of bounds on either side length wise
+
+                                                            //we can then iterate from the bottom left half of the matrix...
 
 								//technically we are dealing with a corner line, but it is a point in the yz plane
 								corner_point_z = obstacle_point_center_z + cspace_half_width;
@@ -1546,7 +1533,7 @@ bool GoalDirection::isReachable(const Vector3d & direction){ //float direction[4
 							}
 						}
 					}
-					else if (obstacle_point_center_y > cspace_width){
+                                        else if (obstacle_point_center_y > cspace_width){
 						// This means the obstacle point is to the right of the matrix
 						// so we only have to fill up the left part of the sphere
 						if (obstacle_point_center_z < 0){
@@ -1998,7 +1985,8 @@ bool GoalDirection::isReachable(const Vector3d & direction){ //float direction[4
 		  			return false;
 		  			break;
 		  			//condition =false;
-		  		} 
+                                }
+                                cout << "front edge is: " << front_edge ;
 		  		front_edge -= 1;
 		  	}
 		  	else{
@@ -2188,6 +2176,8 @@ int main(int argc, char** argv)
 
     //Wait a second, maybe do all the work here instead... 
 
+    //if(goal_point){
+    //}
 
 
 

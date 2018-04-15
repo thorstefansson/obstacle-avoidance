@@ -121,6 +121,7 @@ private:
     int sonar_up_limit, sonar_down_limit, range_up, range_down;
 
     int countx, county, countz;
+    bool goal_point;
     
     double camera_x_offset;
 

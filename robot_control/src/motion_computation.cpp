@@ -45,7 +45,6 @@ MotionComputation::MotionComputation(ros::NodeHandle* nodehandle):nh_(*nodehandl
     cspace_half_width = ceil(robot_radius / cspace_resolution);
 	n_radius = robot_radius/ cspace_resolution;
 
-
     //robot_radius / cspace_resolution;
     // for robot radius 0.2 and cspace_rosolution 0.02 n_radius is 10
     //sphere_model[n_radius][n_radius][n_radius] = {0};

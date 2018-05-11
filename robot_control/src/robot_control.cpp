@@ -5,6 +5,8 @@
 // this header incorporates all the necessary #include files and defines the class "ExampleRosClass"
 #include "robot_control.h"
 
+#include <tf2/LinearMath/Quaternion.h>
+
 //CONSTRUCTOR:  this will get called whenever an instance of this class is created
 // want to put all dirty work of initializations here
 // odd syntax: have to pass nodehandle pointer into constructor for constructor to build subscribers, etc
@@ -208,6 +210,7 @@ void RobotControl::robotPositionCallback(const geometry_msgs::PoseStampedConstPt
             set_pose.pose.position.y = robot_position[1] + direction_vector[1];
             set_pose.pose.position.z = robot_position[2] + direction_vector[2];
 
+              // change this:
             set_pose.pose.orientation.x = 0;
             set_pose.pose.orientation.y = 0;
             set_pose.pose.orientation.z = goal_orientation[2];
@@ -293,6 +296,17 @@ void RobotControl::robotPositionCallback(const geometry_msgs::PoseStampedConstPt
                         set_pose.pose.orientation.z = robot_orientation[2];
                         set_pose.pose.orientation.w = robot_orientation[3]; 
                     }
+
+                    // You can do something like this...
+                    /*
+                    tf2::Quaternion q;
+                    q.setRPY(0, 0, theta);
+
+                    set_pose.pose.orientation.x = q.x();
+                    set_pose.pose.orientation.y = q.y();
+                    set_pose.pose.orientation.z = q.z();
+                    set_pose.pose.orientation.w = q.w();
+                    */
 
                     pub_desired_position_.publish(set_pose);
 

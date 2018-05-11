@@ -15,6 +15,8 @@ find_package(catkin REQUIRED COMPONENTS
   roscpp
   std_msgs
   octomap_ros
+  tf2
+  tf2_ros
 )
 
 find_package(octomap REQUIRED)

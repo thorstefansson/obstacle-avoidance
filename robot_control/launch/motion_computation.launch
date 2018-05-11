@@ -1,0 +1,9 @@
+<launch>
+
+	<include file = "$(find robot_setup_tf)/launch/octomap_to_spherical.launch" />
+
+	<node pkg="robot_control" type="motion_computation" name="motion_computation" output="screen" />
+
+	<node pkg = "robot_control" type="robot_control" name="robot_control" output="screen" />
+
+</launch>

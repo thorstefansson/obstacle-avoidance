@@ -534,6 +534,48 @@ void GoalDirection::sphericalMatrixCallback(const std_msgs::Float32MultiArray::C
 
   	//cout << "done with runnig sphericalMatrixCallback"<< endl;
 
+  	if(goal_point){
+  		
+
+  		direction_vector = goal_position - robot_position;
+
+	    //cout<<"here 2"<< endl;
+	    //cout << "robot_vector: " << robot_position[0] << " " << robot_position[1] <<" " << robot_position[2] << endl;
+	    //cout << "goal_position: " << goal_position[0] << " " << goal_position[1] <<" " << goal_position[2] << endl;
+
+	    //cout << "direction_vector: " << direction_vector[0] << " " << direction_vector[1] <<" " << direction_vector[2] << endl;
+
+	    xy_length_of_direction_vector = sqrt(pow(direction_vector[0],2) + pow(direction_vector[1],2));
+
+	    set_pose.header.frame_id = "map";
+	    set_pose.header.stamp = ros::Time::now();
+
+        double theta = acos(direction_vector[0]/xy_length_of_direction_vector);
+        if(direction_vector[1] < 0){
+                theta = -theta;
+        }
+
+        cout << "theta is: " << theta << endl;
+        //and we want to turn around z axis so our quaternion coordinates become:
+        double x= 0;
+        double y = 0;
+        z_turn = 1*sin(theta/2);
+        w_turn = cos(theta/2);
+
+        set_pose.pose.position.x = 0;
+        set_pose.pose.position.y = 0;
+        set_pose.pose.position.z = 0.4;
+        //}
+
+        set_pose.pose.orientation.x = 0;
+        set_pose.pose.orientation.y = 0;
+        set_pose.pose.orientation.z = z_turn;
+        set_pose.pose.orientation.w = w_turn;
+
+
+	    pub_desired_position_.publish(set_pose);
+  	}
+
 }
 
 
@@ -546,264 +588,232 @@ void GoalDirection::goalPositionCallback(const geometry_msgs::Vector3ConstPtr& i
 	goal_position.push_back(input->x);
 	goal_position.push_back(input->y);
 	goal_position.push_back(input->z);
+
 	*/
 	//cout<<"here 1"<< endl;
-        goal_point = true;
 
-        geometry_msgs::PoseStamped set_pose;
+	direction_vector = goal_position - robot_position;
+    goal_point = true;
 
-        direction_vector = goal_position - robot_position;
+    //geometry_msgs::PoseStamped set_pose;
 
-        //cout<<"here 2"<< endl;
-        //cout << "robot_vector: " << robot_position[0] << " " << robot_position[1] <<" " << robot_position[2] << endl;
-        //cout << "goal_position: " << goal_position[0] << " " << goal_position[1] <<" " << goal_position[2] << endl;
-
-        //cout << "direction_vector: " << direction_vector[0] << " " << direction_vector[1] <<" " << direction_vector[2] << endl;
-
-        double xy_length_of_direction_vector = sqrt(pow(direction_vector[0],2) + pow(direction_vector[1],2));
+    //cout<<"here 3"<< endl;
 
 
-        set_pose.header.frame_id = "map";
-        set_pose.header.stamp = ros::Time::now();
+   vector<distance_and_index> distance_index_vector;
+   vector<distance_and_index> :: iterator vitr;
+   //vector<pair<int,int>> matrix_indices_vector;
+   vector< vector<double> > subgoal_xyz; //indeces_xyz;
+   double r, rho, phi, theta;
 
-        //cout<<"here 3"<< endl;
+   double x1,y1,z1;
 
+    //cout<<"what's happening"<< endl;
+    //if the goal is not directly above or below the robot:
+    if(abs(direction_vector[2])/ xy_length_of_direction_vector < 2.8){
 
-       vector<distance_and_index> distance_index_vector;
-       vector<distance_and_index> :: iterator vitr;
-       //vector<pair<int,int>> matrix_indices_vector;
-       vector< vector<double> > subgoal_xyz; //indeces_xyz;
-       double r, rho, phi, theta;
+            //turn robot in xy plane in direction of goal
 
-       double x1,y1,z1;
+            //find desired degrees in xy plane:
 
-        //cout<<"what's happening"<< endl;
-        //if the goal is not directly above or below the robot:
-        if(abs(direction_vector[2])/ xy_length_of_direction_vector < 2.8){
-
-                //turn robot in xy plane in direction of goal
-
-                //find desired degrees in xy plane:
-
-                //usually x forward, y left and z up:
-                // so maybe do like this:?
-
-                double theta = acos(direction_vector[0]/xy_length_of_direction_vector);
-                if(direction_vector[1] < 0){
-                        theta = -theta;
-                }
-
-                //and we want to turn around z axis so our quaternion coordinates become:
-                double x= 0;
-                double y = 0;
-                double z = 1*sin(theta/2);
-                double w = cos(theta/2);
-
-                bool reachable;
-                //cout << "theta " << theta << endl;
-                //cout << "difference in orientation: " << abs(z - robot_orientation[2]) + abs(w - robot_orientation[3]) << endl;
-                //cout << "desired quaternion coordinates: " << "x: " << x << "y: " <<y << "z: " << z <<"w: " <<w << endl;
-                //cout << "actual quaternion coordinates: " << "x: " << robot_orientation[0] << "y: " <<robot_orientation[1] << "z: "
-                //<< robot_orientation[2] <<"w: " <<robot_orientation[3] << endl;
-
-                // only check if reachable if within camera limits..
-                // vertical field of view of camera only 45 degrees so..
-                //cout << "checking if goal within camera limits, line 600. ";
-                if((abs(z - robot_orientation[2]) + abs(w - robot_orientation[3])  < 0.05 || abs(z + robot_orientation[2]) + abs(w + robot_orientation[3]) < 0.05)
-                        && abs(direction_vector[2])/ xy_length_of_direction_vector < 0.36){ // for within 20 degrees...
-                        //cout << "it is within limits. ";
-                        //cout << "going into isReachable function" << endl ;
-                        // To get the direction in the same frame as the robot we need to turn the direction vector
-                        // to do this we find the inverse of the robot quaternion and use it to turn the direction vector
-                        // why am I using the inverse? fml
-
-                        // inverse of robot quaternion:
-                        Vector3d robot_orientation_inverse_v;
-                        float robot_orientation_inverse_w;
-
-                        float robot_orientation_sum_squared = pow(robot_orientation[0],2) + pow(robot_orientation[1],2) + pow(robot_orientation[2],2)
-                        +pow(robot_orientation[3],2);
-
-                        robot_orientation_inverse_w = robot_orientation[3] / robot_orientation_sum_squared;
-
-                        robot_orientation_inverse_v[0] = -robot_orientation[0] / robot_orientation_sum_squared;
-                        robot_orientation_inverse_v[1] = -robot_orientation[1] / robot_orientation_sum_squared;
-                        robot_orientation_inverse_v[2] = -robot_orientation[2] / robot_orientation_sum_squared;
-
-                        Vector3d direction_robot_frame = direction_vector + 2*robot_orientation_inverse_w*cross(robot_orientation_inverse_v, direction_vector) +
-                        2*cross(robot_orientation_inverse_v, cross(robot_orientation_inverse_v, direction_vector));
-
-
-                        //cout << "direction_robot_frame: " << direction_robot_frame << endl;
-
-
-                        reachable = isReachable(direction_robot_frame);
-                        cout << "Reachable: " << reachable << endl;
-
-                        if(!reachable){
-                                cout<< "not reachable" << endl;
-                                //find which sub goal is closest to goal.
-                                // if it is reachable choose that sub goal; otherwise check the next one.
-                                //hmm what is the best way to do this...
-
-                                //Start with transforming the sub goals to cartesian coordinates...
-                                //or wait, we can also just transform the goal point to spherical coordinates..
-                                //or just neither dumbass..
-
-                                Vector3d subgoal_global_frame, subgoal_robot_frame, robot_orientation_v;
-                                float robot_orientation_w;
-
-                                robot_orientation_v [0] = robot_orientation[0];
-                                robot_orientation_v [1] = robot_orientation[1];
-                                robot_orientation_v [2] = robot_orientation[2];
-                                robot_orientation_w = robot_orientation[3];
+            //usually x forward, y left and z up:
+            // so maybe do like this:?
 
 
 
-                              //cout << "done sorting sub goals by distance to goal, 715. " ;   // anyways
-                                countx = 0;
-                                for (int m = 0; m < spherical_matrix_height; m++){
-                                        for (int n = 0; n < spherical_matrix_width; n++){
-                                                if(subgoal_matrix[m][n] > 0){
-                                                        vector <double> row;
+            bool reachable;
+            //cout << "theta " << theta << endl;
+            //cout << "difference in orientation: " << abs(z - robot_orientation[2]) + abs(w - robot_orientation[3]) << endl;
+            //cout << "desired quaternion coordinates: " << "x: " << x << "y: " <<y << "z: " << z <<"w: " <<w << endl;
+            //cout << "actual quaternion coordinates: " << "x: " << robot_orientation[0] << "y: " <<robot_orientation[1] << "z: "
+            //<< robot_orientation[2] <<"w: " <<robot_orientation[3] << endl;
+
+            // only check if reachable if within camera limits..
+            // vertical field of view of camera only 45 degrees so..
+            //cout << "checking if goal within camera limits, line 600. ";
+            if((abs(z_turn - robot_orientation[2]) + abs(w_turn - robot_orientation[3])  < 0.05 || abs(z_turn + robot_orientation[2]) + abs(w_turn + robot_orientation[3]) < 0.05)
+                    && abs(direction_vector[2])/ xy_length_of_direction_vector < 0.36){ // for within 20 degrees...
+                    //cout << "it is within limits. ";
+                    //cout << "going into isReachable function" << endl ;
+                    // To get the direction in the same frame as the robot we need to turn the direction vector
+                    // to do this we find the inverse of the robot quaternion and use it to turn the direction vector
+                    // why am I using the inverse? fml
+
+                    // inverse of robot quaternion:
+                    Vector3d robot_orientation_inverse_v;
+                    float robot_orientation_inverse_w;
+
+                    float robot_orientation_sum_squared = pow(robot_orientation[0],2) + pow(robot_orientation[1],2) + pow(robot_orientation[2],2)
+                    +pow(robot_orientation[3],2);
+
+                    robot_orientation_inverse_w = robot_orientation[3] / robot_orientation_sum_squared;
+
+                    robot_orientation_inverse_v[0] = -robot_orientation[0] / robot_orientation_sum_squared;
+                    robot_orientation_inverse_v[1] = -robot_orientation[1] / robot_orientation_sum_squared;
+                    robot_orientation_inverse_v[2] = -robot_orientation[2] / robot_orientation_sum_squared;
+
+                    Vector3d direction_robot_frame = direction_vector + 2*robot_orientation_inverse_w*cross(robot_orientation_inverse_v, direction_vector) +
+                    2*cross(robot_orientation_inverse_v, cross(robot_orientation_inverse_v, direction_vector));
+
+                    //cout << "direction_robot_frame: " << direction_robot_frame << endl;
+
+                    reachable = isReachable(direction_robot_frame);
+                    cout << "Reachable: " << reachable << endl;
+
+                    if(!reachable){
+                        cout<< "not reachable" << endl;
+                        //find which sub goal is closest to goal.
+                        // if it is reachable choose that sub goal; otherwise check the next one.
+                        //hmm what is the best way to do this...
+
+                        //Start with transforming the sub goals to cartesian coordinates...
+                        //or wait, we can also just transform the goal point to spherical coordinates..
+                        //or just neither dumbass..
+
+                        Vector3d subgoal_global_frame, subgoal_robot_frame, robot_orientation_v;
+                        float robot_orientation_w;
+
+                        robot_orientation_v [0] = robot_orientation[0];
+                        robot_orientation_v [1] = robot_orientation[1];
+                        robot_orientation_v [2] = robot_orientation[2];
+                        robot_orientation_w = robot_orientation[3];
 
 
-                                                        /*theta = ((m - 29) *3 - 1.5)*pi/180;
-                                                        phi = ((n-59)*3 - 1.5)*pi/180;
-                                                        x1 = subgoal_matrix[m][n]*sin(phi)*cos(theta);
-                                                        y1= subgoal_matrix[m][n]*sin(phi)*sin(theta);
-                                                        z1= subgoal_matrix[m][n]*cos(phi);*/
+
+                      //cout << "done sorting sub goals by distance to goal, 715. " ;   // anyways
+                        countx = 0;
+                        for (int m = 0; m < spherical_matrix_height; m++){
+                            for (int n = 0; n < spherical_matrix_width; n++){
+                                if(subgoal_matrix[m][n] > 0){
+                                    vector <double> row;
+                                    /*theta = ((m - 29) *3 - 1.5)*pi/180;
+                                    phi = ((n-59)*3 - 1.5)*pi/180;
+                                    x1 = subgoal_matrix[m][n]*sin(phi)*cos(theta);
+                                    y1= subgoal_matrix[m][n]*sin(phi)*sin(theta);
+                                    z1= subgoal_matrix[m][n]*cos(phi);*/
 
 
-                                                        //NEED to account for orientation of robot w.r.t. global frame..... !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+                                    //NEED to account for orientation of robot w.r.t. global frame..... !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
-                                                        // Also, currently we are putting direction of goal in global frame into isreachable function
-                                                        // but the direction of sub goals in the robot frame into that function.... !!! this we need to fix
-                                                        rho = subgoal_matrix[m][n];
-                                                        theta = n *  pi / 60 - pi;
-                                                        phi = m * pi / 60 - pi/2;
+                                    // Also, currently we are putting direction of goal in global frame into isreachable function
+                                    // but the direction of sub goals in the robot frame into that function.... !!! this we need to fix
+                                    rho = subgoal_matrix[m][n];
+                                    theta = n *  pi / 60 - pi;
+                                    phi = m * pi / 60 - pi/2;
 
-                                                        r = rho * cos(phi);
-                                                        x1 = r * cos(theta);
-                                                        y1 = r * sin(theta);
-                                                        z1 = rho * sin(phi);
+                                    r = rho * cos(phi);
+                                    x1 = r * cos(theta);
+                                    y1 = r * sin(theta);
+                                    z1 = rho * sin(phi);
 
-                                                        subgoal_robot_frame[0] = x1;
-                                                        subgoal_robot_frame[1] = y1;
-                                                        subgoal_robot_frame[2] = z1;
+                                    subgoal_robot_frame[0] = x1;
+                                    subgoal_robot_frame[1] = y1;
+                                    subgoal_robot_frame[2] = z1;
 
-                                                        // the subgoal is not truly in global frame since we also have to add the position of the robot
-                                                        subgoal_global_frame = subgoal_robot_frame + 2*robot_orientation_w*cross(robot_orientation_v, subgoal_robot_frame) +
-                                                        2*cross(robot_orientation_v, cross(robot_orientation_v, subgoal_robot_frame));
+                                    // the subgoal is not truly in global frame since we also have to add the position of the robot
+                                    subgoal_global_frame = subgoal_robot_frame + 2*robot_orientation_w*cross(robot_orientation_v, subgoal_robot_frame) +
+                                    2*cross(robot_orientation_v, cross(robot_orientation_v, subgoal_robot_frame));
 
-                                                        // store matrix value
-                                                        double distance_sq = pow(goal_position[0] - (subgoal_global_frame[0]+robot_position[0]),2) +
-                                                        pow(goal_position[1] - (subgoal_global_frame[1]+robot_position[1]), 2) +
-                                                        pow(goal_position[2] - (subgoal_global_frame[2]+robot_position[2]), 2);
+                                    // store matrix value
+                                    double distance_sq = pow(goal_position[0] - (subgoal_global_frame[0]+robot_position[0]),2) +
+                                    pow(goal_position[1] - (subgoal_global_frame[1]+robot_position[1]), 2) +
+                                    pow(goal_position[2] - (subgoal_global_frame[2]+robot_position[2]), 2);
 
-                                                        //now push back to vector..
-                                                        distance_index_vector.push_back(make_pair(distance_sq, countx));
-                                                        // push back the m and n values as well..
-                                                        //matrix_indices_vector.push_back(make_pair(m,n));
+                                    //now push back to vector..
+                                    distance_index_vector.push_back(make_pair(distance_sq, countx));
+                                    // push back the m and n values as well..
+                                    //matrix_indices_vector.push_back(make_pair(m,n));
 
-                                                        row.push_back((double)m);
-                                                        row.push_back((double)n);
-                                                        row.push_back(x1);
-                                                        row.push_back(y1);
-                                                        row.push_back(z1);
+                                    row.push_back((double)m);
+                                    row.push_back((double)n);
+                                    row.push_back(x1);
+                                    row.push_back(y1);
+                                    row.push_back(z1);
 
-                                                        subgoal_xyz.push_back(row);
-                                                        countx++;
-                                                }
-                                        }
+                                    subgoal_xyz.push_back(row);
+                                    countx++;
                                 }
-
-                                //cout << "here" << endl;
-
-                                // sort stuff
-                                sort(distance_index_vector.begin(), distance_index_vector.end(), comparator());
-
-
-
-                                // print shit to see if works:
-
-                                //for(distance_and_index p : distance_index_vector){
-                                /*
-                                for(vitr = distance_index_vector.begin(); vitr != distance_index_vector.end(); ++vitr ){
-                                        cout << vitr->first << " " << vitr->second << " | ";
-                                }
-                                cout << endl;
-*/
-                                for(vector<int>::size_type vecitr = 0; vecitr != distance_index_vector.size(); vecitr++){
-                                        // make vector to
-                                        subgoal_vector[0] = subgoal_xyz[distance_index_vector[vecitr].second][2];
-                                        subgoal_vector[1] = subgoal_xyz[distance_index_vector[vecitr].second][3];
-                                        subgoal_vector[2] = subgoal_xyz[distance_index_vector[vecitr].second][4];
-                                        //if subgoal reachable:
-
-                                        //if(vecitr == distance_index_vector.size()-1) cout  << "Last sub goal " ;
-                                        if(isReachable(subgoal_vector)){
-                                                // This subgoal is reachable and therefore the selected subgoal
-
-                                                //cout <<"subgoal at squared and normal distance: " << distance_index_vector[vecitr].first<< "  "
-                                                //<< sqrt(distance_index_vector[vecitr].first) << " chosen" << endl;
-                                                //DO STUFF HERE!!!!
-
-                                                // maybe turn into point cloud for debug reasons...
-
-                                                PointCloud::Ptr msg (new PointCloud);
-                                                msg->header.frame_id = "base_link";
-                                                msg->height = 1;
-                                                msg->width = 1;
-
-                                                x = subgoal_vector[0];
-                                                y = subgoal_vector[1];
-                                                z = subgoal_vector[2];
-                                                msg->points.push_back (pcl::PointXYZ(x,y,z));
-
-                                                // Convert to ROS data type
-                                                sensor_msgs::PointCloud2 output;
-                                                pcl::toROSMsg(*msg, output);
-                                                // Publish the data
-                                                pub_selected_subgoal.publish (output);
-
-                                                //delete msg;
-
-
-                                                break;
-                                        }
-
-                                }
-                                cout << endl;
+                            }
                         }
+
+                        //cout << "here" << endl;
+
+                        // sort stuff
+                        sort(distance_index_vector.begin(), distance_index_vector.end(), comparator());
+
+
+
+                        // print shit to see if works:
+
+                        //for(distance_and_index p : distance_index_vector){
+                        /*
+                        for(vitr = distance_index_vector.begin(); vitr != distance_index_vector.end(); ++vitr ){
+                                cout << vitr->first << " " << vitr->second << " | ";
+                        }
+                        cout << endl;
+*/
+                        for(vector<int>::size_type vecitr = 0; vecitr != distance_index_vector.size(); vecitr++){
+                                // make vector to
+                                subgoal_vector[0] = subgoal_xyz[distance_index_vector[vecitr].second][2];
+                                subgoal_vector[1] = subgoal_xyz[distance_index_vector[vecitr].second][3];
+                                subgoal_vector[2] = subgoal_xyz[distance_index_vector[vecitr].second][4];
+                                //if subgoal reachable:
+
+                                //if(vecitr == distance_index_vector.size()-1) cout  << "Last sub goal " ;
+                                if(isReachable(subgoal_vector)){
+                                        // This subgoal is reachable and therefore the selected subgoal
+
+                                        //cout <<"subgoal at squared and normal distance: " << distance_index_vector[vecitr].first<< "  "
+                                        //<< sqrt(distance_index_vector[vecitr].first) << " chosen" << endl;
+                                        //DO STUFF HERE!!!!
+
+                                        // maybe turn into point cloud for debug reasons...
+
+                                        PointCloud::Ptr msg (new PointCloud);
+                                        msg->header.frame_id = "base_link";
+                                        msg->height = 1;
+                                        msg->width = 1;
+
+                                        x1 = subgoal_vector[0];
+                                        y1 = subgoal_vector[1];
+                                        z1 = subgoal_vector[2];
+                                        msg->points.push_back (pcl::PointXYZ(x1,y1,z1));
+
+                                        // Convert to ROS data type
+                                        sensor_msgs::PointCloud2 output;
+                                        pcl::toROSMsg(*msg, output);
+                                        // Publish the data
+                                        pub_selected_subgoal.publish (output);
+
+                                        //delete msg;
+
+
+                                        break;
+                                }
+
+                        }
+                        cout << endl;
                 }
-                else reachable = false;
-
-
-                //cout << "yolo" << endl;
-                //now to keep the robot in same place but only turn it:
-
-                //set_pose.pose.position =  input->pose.position;
-                /*set_pose.pose.position.x = robot_position[0];
-                set_pose.pose.position.y = robot_position[1];
-                set_pose.pose.position.z = robot_position[2];*/
-
-
-                //for the purposes of visualization test in rviz, remove later maybe:
-                //if(robot_position[2]<0.4){//input->pose.position.z < 0.3){
-                // to get rid of drift, set fixed position:
-                set_pose.pose.position.x = 0;
-                set_pose.pose.position.y = 0;
-                set_pose.pose.position.z = 0.4;
-                //}
-
-                set_pose.pose.orientation.x = 0;
-                set_pose.pose.orientation.y = 0;
-                set_pose.pose.orientation.z = z;
-                set_pose.pose.orientation.w = w;
         }
+        else reachable = false;
 
-        pub_desired_position_.publish(set_pose);
+
+        //cout << "yolo" << endl;
+        //now to keep the robot in same place but only turn it:
+
+        //set_pose.pose.position =  input->pose.position;
+        /*set_pose.pose.position.x = robot_position[0];
+        set_pose.pose.position.y = robot_position[1];
+        set_pose.pose.position.z = robot_position[2];*/
+
+
+        //for the purposes of visualization test in rviz, remove later maybe:
+        //if(robot_position[2]<0.4){//input->pose.position.z < 0.3){
+        // to get rid of drift, set fixed position:
+
+    }
+
+    
 
 	
 	//cout << "direction_vector: " << direction_vector << endl;
@@ -880,6 +890,7 @@ bool GoalDirection::isReachable(const Vector3d & direction){ //float direction[4
 
 	int cspace_length = ceil(sqrt(length_of_direction_vector_sq) / cspace_resolution);
 
+	//cout << "cspace_length: " << cspace_length << endl;
 	int Cspace [cspace_length] [cspace_width] [cspace_width]  = {0};
 
 	for(int i = 0; i < cspace_width; i++){
@@ -927,11 +938,13 @@ bool GoalDirection::isReachable(const Vector3d & direction){ //float direction[4
 	int corner_point_y, corner_point_z;
 
 	int count_points_within = 0;
+
+	int y_itr, x_itr, z_itr;
 	//cout << "in isReachable function" << endl;
 	for(pcl::PointCloud<pcl::PointXYZ>::iterator it = camera_cloud.begin(); it != camera_cloud.end(); it++){
 		//cout << "in loop" << endl;
 
-                if(isfinite(it->z)){ //!isnan(it->y) ){//&& !isnan(it->x) && !isnan(it->y)){
+            if(isfinite(it->z)){ //!isnan(it->y) ){//&& !isnan(it->x) && !isnan(it->y)){
 			//Since z is forward, y down and x to the right:
 			// and we want x forward, y left and z up:
 			y = -(it->x);
@@ -995,12 +1008,68 @@ bool GoalDirection::isReachable(const Vector3d & direction){ //float direction[4
 				//Now, we only want to fill in the points that are actually a part of the matrix...
 				// so
 
+
+
 				//addObstacleSphere(obstacle_point_center_x, obstacle_point_center_y, obstacle_point_center_z, cspace_length);
 
 
 
+				//profum thennan stutta koda i stadinn til ad athuga hvort hann virki:
+				/*for(county = 0; county< cspace_half_width ; county ++){
+                    for(countz = 0; countz< cspace_half_width ; countz ++){
+						for(countx = 0; countx< cspace_half_width ; countx ++){
+							if(sphere_model[countx][county][countz] == 1){
+
+								if(obstacle_point_center_x+countx<cspace_length && obstacle_point_center_x+countx > 0){
+									if(obstacle_point_center_y+county<cspace_width && obstacle_point_center_y+county >=0){
+										if(obstacle_point_center_z+countz<cspace_width && obstacle_point_center_z+countz >=0){
+											Cspace[obstacle_point_center_x+countx][obstacle_point_center_y+county][obstacle_point_center_z+countz] =1;
+										}
+										if(obstacle_point_center_z-countz >=0 && obstacle_point_center_z-countz<cspace_width){
+											Cspace[obstacle_point_center_x+countx][obstacle_point_center_y+county][obstacle_point_center_z-countz] =1;
+										}
+									}
+									if(obstacle_point_center_y-county >=0 && obstacle_point_center_y-county<cspace_width){
+										if(obstacle_point_center_z+countz<cspace_width && obstacle_point_center_z+countz >=0){
+											Cspace[obstacle_point_center_x+countx][obstacle_point_center_y-county][obstacle_point_center_z+countz] =1;
+										}
+										if(obstacle_point_center_z-countz >=0 && obstacle_point_center_z-countz<cspace_width){
+											Cspace[obstacle_point_center_x+countx][obstacle_point_center_y-county][obstacle_point_center_z-countz] =1;
+										}
+									}
+
+								}
+								if(obstacle_point_center_x- countx>0 && obstacle_point_center_x-countx<cspace_length){
+									if(obstacle_point_center_y+county<cspace_width && obstacle_point_center_y+county >=0){
+										if(obstacle_point_center_z+countz<cspace_width && obstacle_point_center_z+countz >=0){
+											Cspace[obstacle_point_center_x-countx][obstacle_point_center_y+county][obstacle_point_center_z+countz] =1;
+										}
+										if(obstacle_point_center_z-countz >=0 && obstacle_point_center_z-countz<cspace_width){
+											Cspace[obstacle_point_center_x-countx][obstacle_point_center_y+county][obstacle_point_center_z-countz] =1;
+										}
+									}
+									if(obstacle_point_center_y-county >=0 && obstacle_point_center_y-county<cspace_width){
+										if(obstacle_point_center_z+countz<cspace_width && obstacle_point_center_z+countz >=0){
+											Cspace[obstacle_point_center_x-countx][obstacle_point_center_y-county][obstacle_point_center_z+countz] =1;
+										}
+										if(obstacle_point_center_z-countz >=0 && obstacle_point_center_z-countz<cspace_width){
+											Cspace[obstacle_point_center_x-countx][obstacle_point_center_y-county][obstacle_point_center_z-countz] =1;
+										}
+									}
+								}
+							}
+						}
+					}
+				}*/
+
+
+
+
+// __________________________________________________________________________!!HERE!!___________________________________________________________________
+
+				//cout << "x: " << obstacle_point_center_x << "y: " << obstacle_point_center_y << "z: " << obstacle_point_center_z << endl;
 				if (obstacle_point_center_x + cspace_half_width < cspace_length && obstacle_point_center_x - cspace_half_width > 0 ){
-                                        if(obstacle_point_center_y < 0){
+                    if(obstacle_point_center_y < 0){
 						// This means the center is to the left of the matrix
 						// so we only have to fill up the right part of the sphere
 						if (obstacle_point_center_z < 0){
@@ -1014,11 +1083,11 @@ bool GoalDirection::isReachable(const Vector3d & direction){ //float direction[4
 							corner_point_z = obstacle_point_center_z + cspace_half_width;
 							corner_point_y = obstacle_point_center_y + cspace_half_width;
 
-							for(int y_itr = 0; y_itr < corner_point_y; y_itr++){
-								for(int z_itr = 0; z_itr < corner_point_z; z_itr ++ ){
+							for( y_itr = 0; y_itr < corner_point_y; y_itr++){
+								for( z_itr = 0; z_itr < corner_point_z; z_itr ++ ){
 									// we also have to iterate over this in x direction.. 
 									countx = 0;
-									for(int x_itr = obstacle_point_center_x ;x_itr < obstacle_point_center_x + cspace_half_width ;x_itr++){
+									for( x_itr = obstacle_point_center_x ;x_itr < obstacle_point_center_x + cspace_half_width ;x_itr++){
 										if(sphere_model[countx][-obstacle_point_center_y+y_itr][-obstacle_point_center_z+z_itr] == 1){
 											Cspace[x_itr][y_itr][z_itr] = 1;
 											Cspace[obstacle_point_center_x- countx][y_itr][z_itr]=1;
@@ -1028,7 +1097,7 @@ bool GoalDirection::isReachable(const Vector3d & direction){ //float direction[4
 								}
 							}
 						}
-						else if (obstacle_point_center_z > cspace_width){
+						else if (obstacle_point_center_z >= cspace_width){
 							// Obstacle point above matrix
 							// only fill in bottom right half of sphere
 
@@ -1038,12 +1107,12 @@ bool GoalDirection::isReachable(const Vector3d & direction){ //float direction[4
 							corner_point_z = obstacle_point_center_z - cspace_half_width;
 							corner_point_y = obstacle_point_center_y + cspace_half_width;
 
-							for(int y_itr = 0; y_itr < corner_point_y; y_itr++){
+							for(y_itr = 0; y_itr < corner_point_y; y_itr++){
 								countz =0;
-								for(int z_itr = cspace_width-1; z_itr > corner_point_z; z_itr-- ){
+								for(z_itr = cspace_width-1; z_itr > corner_point_z; z_itr-- ){
 									// we also have to iterate over this in x direction.. 
 									countx = 0;
-									for(int x_itr = obstacle_point_center_x ;x_itr < obstacle_point_center_x + cspace_half_width ;x_itr++){
+									for( x_itr = obstacle_point_center_x ;x_itr < obstacle_point_center_x + cspace_half_width ;x_itr++){
 										if(sphere_model[countx][-obstacle_point_center_y+y_itr][obstacle_point_center_z-cspace_width+countz] == 1){
 											Cspace[x_itr][y_itr][z_itr] = 1;
 											Cspace[obstacle_point_center_x- countx][y_itr][z_itr]=1;
@@ -1066,11 +1135,11 @@ bool GoalDirection::isReachable(const Vector3d & direction){ //float direction[4
 								corner_point_z = obstacle_point_center_z + cspace_half_width;
 								corner_point_y = obstacle_point_center_y + cspace_half_width;
 
-								for(int y_itr = 0; y_itr < corner_point_y; y_itr++){
+								for(y_itr = 0; y_itr < corner_point_y; y_itr++){
 									countz = 0;
-									for(int z_itr = obstacle_point_center_z; z_itr < corner_point_z; z_itr ++ ){ 
+									for(z_itr = obstacle_point_center_z; z_itr < corner_point_z; z_itr ++ ){ 
 										countx = 0;
-										for(int x_itr = obstacle_point_center_x ;x_itr < obstacle_point_center_x + cspace_half_width ;x_itr++){
+										for( x_itr = obstacle_point_center_x ;x_itr < obstacle_point_center_x + cspace_half_width ;x_itr++){
 											if(sphere_model[countx][-obstacle_point_center_y+y_itr][countz] == 1){
 												Cspace[x_itr][y_itr][z_itr] = 1;
 												if(obstacle_point_center_z - countz >= 0) Cspace[x_itr][y_itr][obstacle_point_center_z - countz] = 1;
@@ -1092,12 +1161,12 @@ bool GoalDirection::isReachable(const Vector3d & direction){ //float direction[4
 								corner_point_z = obstacle_point_center_z - cspace_half_width;
 								corner_point_y = obstacle_point_center_y + cspace_half_width;
 
-								for(int y_itr = 0; y_itr < corner_point_y; y_itr++){
+								for(y_itr = 0; y_itr < corner_point_y; y_itr++){
 									countz =0;
-									for(int z_itr = obstacle_point_center_z; z_itr > corner_point_z; z_itr-- ){
+									for(z_itr = obstacle_point_center_z; z_itr > corner_point_z; z_itr-- ){
 										// we also have to iterate over this in x direction.. 
 										countx = 0;
-										for(int x_itr = obstacle_point_center_x ;x_itr < obstacle_point_center_x + cspace_half_width ;x_itr++){
+										for(x_itr = obstacle_point_center_x ;x_itr < obstacle_point_center_x + cspace_half_width ;x_itr++){
 											if(sphere_model[countx][-obstacle_point_center_y+y_itr][countz] == 1){ 
 												Cspace[x_itr][y_itr][z_itr] = 1;
 												if(obstacle_point_center_z + countz < cspace_width) Cspace[x_itr][y_itr][obstacle_point_center_z + countz] = 1;
@@ -1125,11 +1194,11 @@ bool GoalDirection::isReachable(const Vector3d & direction){ //float direction[4
 							corner_point_y = obstacle_point_center_y - cspace_half_width;
 
 							county = 0;
-							for(int y_itr = cspace_width-1; y_itr > corner_point_y; y_itr--){
-								for(int z_itr = 0; z_itr < corner_point_z; z_itr ++ ){
+							for(y_itr = cspace_width-1; y_itr > corner_point_y; y_itr--){
+								for(z_itr = 0; z_itr < corner_point_z; z_itr ++ ){
 									// we also have to iterate over this in x direction.. 
 									countx = 0;
-									for(int x_itr = obstacle_point_center_x ;x_itr < obstacle_point_center_x + cspace_half_width ;x_itr++){
+									for(x_itr = obstacle_point_center_x ;x_itr < obstacle_point_center_x + cspace_half_width ;x_itr++){
 										if(sphere_model[countx][obstacle_point_center_y- cspace_width +county][-obstacle_point_center_z+z_itr] == 1){
 											Cspace[x_itr][y_itr][z_itr] = 1;
 											Cspace[obstacle_point_center_x - countx][y_itr][z_itr]=1;
@@ -1146,12 +1215,12 @@ bool GoalDirection::isReachable(const Vector3d & direction){ //float direction[4
 							corner_point_z = obstacle_point_center_z - cspace_half_width;
 							corner_point_y = obstacle_point_center_y - cspace_half_width;
 							county = 0;
-							for(int y_itr = cspace_width-1; y_itr > corner_point_y; y_itr--){
+							for(y_itr = cspace_width-1; y_itr > corner_point_y; y_itr--){
 								countz =0;
-								for(int z_itr = cspace_width-1; z_itr > corner_point_z; z_itr-- ){
+								for(z_itr = cspace_width-1; z_itr > corner_point_z; z_itr-- ){
 									// we also have to iterate over this in x direction.. 
 									countx = 0;
-									for(int x_itr = obstacle_point_center_x ;x_itr < obstacle_point_center_x + cspace_half_width ;x_itr++){
+									for(x_itr = obstacle_point_center_x ;x_itr < obstacle_point_center_x + cspace_half_width ;x_itr++){
 										if(sphere_model[countx][obstacle_point_center_y- cspace_width +county][obstacle_point_center_z-cspace_width+countz] == 1){
 											Cspace[x_itr][y_itr][z_itr] = 1;
 											Cspace[obstacle_point_center_x- countx][y_itr][z_itr]=1;
@@ -1175,11 +1244,11 @@ bool GoalDirection::isReachable(const Vector3d & direction){ //float direction[4
 								corner_point_z = obstacle_point_center_z + cspace_half_width;
 								corner_point_y = obstacle_point_center_y - cspace_half_width;
 								county = 0;
-								for(int y_itr = cspace_width-1; y_itr > corner_point_y; y_itr--){
+								for(y_itr = cspace_width-1; y_itr > corner_point_y; y_itr--){
 									countz = 0;
-									for(int z_itr = obstacle_point_center_z; z_itr < corner_point_z; z_itr ++ ){ 
+									for(z_itr = obstacle_point_center_z; z_itr < corner_point_z; z_itr ++ ){ 
 										countx = 0;
-										for(int x_itr = obstacle_point_center_x ;x_itr < obstacle_point_center_x + cspace_half_width ;x_itr++){
+										for(x_itr = obstacle_point_center_x ;x_itr < obstacle_point_center_x + cspace_half_width ;x_itr++){
 											if(sphere_model[countx][obstacle_point_center_y- cspace_width +county][countz] == 1){
 												Cspace[x_itr][y_itr][z_itr] = 1;
 												if(obstacle_point_center_z - countz >= 0) Cspace[x_itr][y_itr][obstacle_point_center_z - countz] = 1;
@@ -1202,12 +1271,12 @@ bool GoalDirection::isReachable(const Vector3d & direction){ //float direction[4
 								corner_point_z = obstacle_point_center_z - cspace_half_width;
 								corner_point_y = obstacle_point_center_y - cspace_half_width;
 								county = 0;
-								for(int y_itr = cspace_width-1; y_itr > corner_point_y; y_itr--){
+								for(y_itr = cspace_width-1; y_itr > corner_point_y; y_itr--){
 									countz =0;
-									for(int z_itr = obstacle_point_center_z; z_itr > corner_point_z; z_itr-- ){
+									for(z_itr = obstacle_point_center_z; z_itr > corner_point_z; z_itr-- ){
 										// we also have to iterate over this in x direction.. 
 										countx = 0;
-										for(int x_itr = obstacle_point_center_x ;x_itr < obstacle_point_center_x + cspace_half_width ;x_itr++){
+										for(x_itr = obstacle_point_center_x ;x_itr < obstacle_point_center_x + cspace_half_width ;x_itr++){
 											if(sphere_model[countx][obstacle_point_center_y- cspace_width +county][countz] == 1){ 
 												Cspace[x_itr][y_itr][z_itr] = 1;
 												if(obstacle_point_center_z + countz < cspace_width) Cspace[x_itr][y_itr][obstacle_point_center_z + countz] = 1;
@@ -1240,10 +1309,10 @@ bool GoalDirection::isReachable(const Vector3d & direction){ //float direction[4
 							corner_point_y = obstacle_point_center_y + cspace_half_width;
 
 							county = 0;
-							for(int y_itr = obstacle_point_center_y; y_itr < corner_point_y; y_itr++){
-								for(int z_itr = 0; z_itr < corner_point_z; z_itr ++ ){ 
+							for(y_itr = obstacle_point_center_y; y_itr < corner_point_y; y_itr++){
+								for(z_itr = 0; z_itr < corner_point_z; z_itr ++ ){ 
 									countx = 0;
-									for(int x_itr = obstacle_point_center_x ;x_itr < obstacle_point_center_x + cspace_half_width ;x_itr++){
+									for(x_itr = obstacle_point_center_x ;x_itr < obstacle_point_center_x + cspace_half_width ;x_itr++){
 										if(sphere_model[countx][county][-obstacle_point_center_z+z_itr] == 1){
 											Cspace[x_itr][y_itr][z_itr] = 1;
 											if(obstacle_point_center_y - county >= 0) Cspace[x_itr][obstacle_point_center_y - county][z_itr] = 1;
@@ -1267,10 +1336,10 @@ bool GoalDirection::isReachable(const Vector3d & direction){ //float direction[4
 							corner_point_y = obstacle_point_center_y - cspace_half_width;
 
 							county = 0;
-							for(int y_itr = obstacle_point_center_y; y_itr > corner_point_y; y_itr--){
-								for(int z_itr = 0; z_itr < corner_point_z; z_itr ++){ 
+							for(y_itr = obstacle_point_center_y; y_itr > corner_point_y; y_itr--){
+								for(z_itr = 0; z_itr < corner_point_z; z_itr ++){ 
 									countx = 0;
-									for(int x_itr = obstacle_point_center_x; x_itr < obstacle_point_center_x + cspace_half_width ;x_itr++){
+									for(x_itr = obstacle_point_center_x; x_itr < obstacle_point_center_x + cspace_half_width ;x_itr++){
 										if(sphere_model[countx][county][-obstacle_point_center_z+z_itr] == 1){
 											
 											Cspace[x_itr][y_itr][z_itr] = 1;
@@ -1301,11 +1370,11 @@ bool GoalDirection::isReachable(const Vector3d & direction){ //float direction[4
 							corner_point_y = obstacle_point_center_y + cspace_half_width;
 
 							county = 0;
-							for(int y_itr = obstacle_point_center_y; y_itr < corner_point_y; y_itr++){
+							for(y_itr = obstacle_point_center_y; y_itr < corner_point_y; y_itr++){
 								countz = 0;
-								for(int z_itr = cspace_width-1; z_itr > corner_point_z; z_itr -- ){ 
+								for(z_itr = cspace_width-1; z_itr > corner_point_z; z_itr -- ){ 
 									countx = 0;
-									for(int x_itr = obstacle_point_center_x ;x_itr < obstacle_point_center_x + cspace_half_width ;x_itr++){
+									for(x_itr = obstacle_point_center_x ;x_itr < obstacle_point_center_x + cspace_half_width ;x_itr++){
 										if(sphere_model[countx][county][countz] == 1){
 											Cspace[x_itr][y_itr][z_itr] = 1;
 											if(obstacle_point_center_y - county >= 0) Cspace[x_itr][obstacle_point_center_y - county][z_itr] = 1;
@@ -1330,11 +1399,11 @@ bool GoalDirection::isReachable(const Vector3d & direction){ //float direction[4
 							corner_point_y = obstacle_point_center_y - cspace_half_width;
 
 							county = 0;
-							for(int y_itr = obstacle_point_center_y; y_itr > corner_point_y; y_itr--){
+							for(y_itr = obstacle_point_center_y; y_itr > corner_point_y; y_itr--){
 								countz = 0;
-								for(int z_itr = cspace_width-1; z_itr > corner_point_z; z_itr--){ 
+								for(z_itr = cspace_width-1; z_itr > corner_point_z; z_itr--){ 
 									countx = 0;
-									for(int x_itr = obstacle_point_center_x; x_itr < obstacle_point_center_x + cspace_half_width ;x_itr++){
+									for(x_itr = obstacle_point_center_x; x_itr < obstacle_point_center_x + cspace_half_width ;x_itr++){
 										if(sphere_model[countx][county][countz] == 1){
 											Cspace[x_itr][y_itr][z_itr] = 1;
 											if(obstacle_point_center_y + county < cspace_width) Cspace[x_itr][obstacle_point_center_y + county][z_itr] = 1;
@@ -1359,55 +1428,38 @@ bool GoalDirection::isReachable(const Vector3d & direction){ //float direction[4
 						// gerum bara einfaldan koda fyrir thetta til ad byrja med, er ordinn ansi threyttur a thessu...
 
 						for(county = 0; county< cspace_half_width ; county ++){
-                                                        for(countz = 0; countz< cspace_half_width ; countz ++){
+                            for(countz = 0; countz< cspace_half_width; countz ++){
 								for(countx = 0; countx< cspace_half_width ; countx ++){
 
 									if(sphere_model[countx][county][countz] == 1){
 
-
-                                                                                if(obstacle_point_center_y+county<cspace_width){
-                                                                                        if(obstacle_point_center_z+countz<cspace_width){
-                                                                                                Cspace[obstacle_point_center_x+countx][obstacle_point_center_y+county][obstacle_point_center_z+countz] =1;
-                                                                                        }
-                                                                                        if(obstacle_point_center_z-countz >=0){
-                                                                                                Cspace[obstacle_point_center_x+countx][obstacle_point_center_y+county][obstacle_point_center_z-countz] =1;
-                                                                                        }
-                                                                                }
-                                                                                if(obstacle_point_center_y-county >=0){
-                                                                                        if(obstacle_point_center_z+countz<cspace_width){
-                                                                                                Cspace[obstacle_point_center_x+countx][obstacle_point_center_y-county][obstacle_point_center_z+countz] =1;
-                                                                                        }
-                                                                                        if(obstacle_point_center_z-countz >=0){
-                                                                                                Cspace[obstacle_point_center_x+countx][obstacle_point_center_y-county][obstacle_point_center_z-countz] =1;
-                                                                                        }
-                                                                                }
-
-
-
-                                                                                if(obstacle_point_center_y+county<cspace_width){
-                                                                                        if(obstacle_point_center_z+countz<cspace_width){
-                                                                                                Cspace[obstacle_point_center_x-countx][obstacle_point_center_y+county][obstacle_point_center_z+countz] =1;
-                                                                                        }
-                                                                                        if(obstacle_point_center_z-countz >=0){
-                                                                                                Cspace[obstacle_point_center_x-countx][obstacle_point_center_y+county][obstacle_point_center_z-countz] =1;
-                                                                                        }
-                                                                                }
-                                                                                if(obstacle_point_center_y-county >=0){
-                                                                                        if(obstacle_point_center_z+countz<cspace_width){
-                                                                                                Cspace[obstacle_point_center_x-countx][obstacle_point_center_y-county][obstacle_point_center_z+countz] =1;
-                                                                                        }
-                                                                                        if(obstacle_point_center_z-countz >=0){
-                                                                                                Cspace[obstacle_point_center_x-countx][obstacle_point_center_y-county][obstacle_point_center_z-countz] =1;
-                                                                                        }
-                                                                                }
-
+                                        if(obstacle_point_center_y+county<cspace_width){
+                                                if(obstacle_point_center_z+countz<cspace_width){ 
+                                                        Cspace[obstacle_point_center_x+countx][obstacle_point_center_y+county][obstacle_point_center_z+countz] =1;
+                                                        Cspace[obstacle_point_center_x-countx][obstacle_point_center_y+county][obstacle_point_center_z+countz] =1;
+                                                }
+                                                if(obstacle_point_center_z-countz >=0){
+                                                        Cspace[obstacle_point_center_x+countx][obstacle_point_center_y+county][obstacle_point_center_z-countz] =1;
+                                                        Cspace[obstacle_point_center_x-countx][obstacle_point_center_y+county][obstacle_point_center_z-countz] =1;
+                                                }
+                                        }
+                                        if(obstacle_point_center_y-county >=0){
+                                                if(obstacle_point_center_z+countz<cspace_width){
+                                                        Cspace[obstacle_point_center_x+countx][obstacle_point_center_y-county][obstacle_point_center_z+countz] =1;
+                                                        Cspace[obstacle_point_center_x-countx][obstacle_point_center_y-county][obstacle_point_center_z+countz] =1;
+                                                }
+                                                if(obstacle_point_center_z-countz >=0){
+                                                        Cspace[obstacle_point_center_x+countx][obstacle_point_center_y-county][obstacle_point_center_z-countz] =1;
+                                                        Cspace[obstacle_point_center_x-countx][obstacle_point_center_y-county][obstacle_point_center_z-countz] =1;
+                                                }
+                                        }
 									}
 								}
 							}
 						}
 					}
 				}
-				else{
+				else if (obstacle_point_center_x < cspace_length){
 					if(obstacle_point_center_y < 0){
 						// This means the center is to the left of the matrix
 						// so we only have to fill up the right part of the sphere
@@ -1422,11 +1474,11 @@ bool GoalDirection::isReachable(const Vector3d & direction){ //float direction[4
 							corner_point_z = obstacle_point_center_z + cspace_half_width;
 							corner_point_y = obstacle_point_center_y + cspace_half_width;
 
-							for(int y_itr = 0; y_itr < corner_point_y; y_itr++){
-								for(int z_itr = 0; z_itr < corner_point_z; z_itr ++ ){
+							for(y_itr = 0; y_itr < corner_point_y; y_itr++){
+								for(z_itr = 0; z_itr < corner_point_z; z_itr ++ ){
 									// we also have to iterate over this in x direction.. 
 									countx = 0;
-									for(int x_itr = obstacle_point_center_x ;x_itr < obstacle_point_center_x + cspace_half_width ;x_itr++){
+									for(x_itr = obstacle_point_center_x ;x_itr < obstacle_point_center_x + cspace_half_width ;x_itr++){
 										if(sphere_model[countx][-obstacle_point_center_y+y_itr][-obstacle_point_center_z+z_itr] == 1){
 											if(x_itr < cspace_length) Cspace[x_itr][y_itr][z_itr] = 1;
 											if(obstacle_point_center_x- countx >0) Cspace[obstacle_point_center_x- countx][y_itr][z_itr]=1;
@@ -1446,12 +1498,12 @@ bool GoalDirection::isReachable(const Vector3d & direction){ //float direction[4
 							corner_point_z = obstacle_point_center_z - cspace_half_width;
 							corner_point_y = obstacle_point_center_y + cspace_half_width;
 
-							for(int y_itr = 0; y_itr < corner_point_y; y_itr++){
+							for(y_itr = 0; y_itr < corner_point_y; y_itr++){
 								countz =0;
-								for(int z_itr = cspace_width-1; z_itr > corner_point_z; z_itr-- ){
+								for(z_itr = cspace_width-1; z_itr > corner_point_z; z_itr-- ){
 									// we also have to iterate over this in x direction.. 
 									countx = 0;
-									for(int x_itr = obstacle_point_center_x ;x_itr < obstacle_point_center_x + cspace_half_width ;x_itr++){
+									for(x_itr = obstacle_point_center_x ;x_itr < obstacle_point_center_x + cspace_half_width ;x_itr++){
 										if(sphere_model[countx][-obstacle_point_center_y+y_itr][obstacle_point_center_z-cspace_width+countz] == 1){
 											if(x_itr < cspace_length) Cspace[x_itr][y_itr][z_itr] = 1;
 											if(obstacle_point_center_x- countx >0) Cspace[obstacle_point_center_x- countx][y_itr][z_itr]=1;
@@ -1477,11 +1529,11 @@ bool GoalDirection::isReachable(const Vector3d & direction){ //float direction[4
 								corner_point_z = obstacle_point_center_z + cspace_half_width;
 								corner_point_y = obstacle_point_center_y + cspace_half_width;
 
-								for(int y_itr = 0; y_itr < corner_point_y; y_itr++){
+								for(y_itr = 0; y_itr < corner_point_y; y_itr++){
 									countz = 0;
-									for(int z_itr = obstacle_point_center_z; z_itr < corner_point_z; z_itr ++ ){ 
+									for(z_itr = obstacle_point_center_z; z_itr < corner_point_z; z_itr ++ ){ 
 										countx = 0;
-										for(int x_itr = obstacle_point_center_x ;x_itr < obstacle_point_center_x + cspace_half_width ;x_itr++){
+										for(x_itr = obstacle_point_center_x ;x_itr < obstacle_point_center_x + cspace_half_width ;x_itr++){
 											if(sphere_model[countx][-obstacle_point_center_y+y_itr][countz] == 1){
 												if(x_itr < cspace_length){
 													Cspace[x_itr][y_itr][z_itr] = 1;
@@ -1507,12 +1559,12 @@ bool GoalDirection::isReachable(const Vector3d & direction){ //float direction[4
 								corner_point_z = obstacle_point_center_z - cspace_half_width;
 								corner_point_y = obstacle_point_center_y + cspace_half_width;
 
-								for(int y_itr = 0; y_itr < corner_point_y; y_itr++){
+								for(y_itr = 0; y_itr < corner_point_y; y_itr++){
 									countz =0;
-									for(int z_itr = obstacle_point_center_z; z_itr > corner_point_z; z_itr-- ){
+									for(z_itr = obstacle_point_center_z; z_itr > corner_point_z; z_itr-- ){
 										// we also have to iterate over this in x direction.. 
 										countx = 0;
-										for(int x_itr = obstacle_point_center_x ;x_itr < obstacle_point_center_x + cspace_half_width ;x_itr++){
+										for(x_itr = obstacle_point_center_x ;x_itr < obstacle_point_center_x + cspace_half_width ;x_itr++){
 											if(sphere_model[countx][-obstacle_point_center_y+y_itr][countz] == 1){
 												if(x_itr < cspace_length){ 
 													Cspace[x_itr][y_itr][z_itr] = 1;
@@ -1533,7 +1585,7 @@ bool GoalDirection::isReachable(const Vector3d & direction){ //float direction[4
 							}
 						}
 					}
-                                        else if (obstacle_point_center_y > cspace_width){
+	                else if (obstacle_point_center_y > cspace_width){
 						// This means the obstacle point is to the right of the matrix
 						// so we only have to fill up the left part of the sphere
 						if (obstacle_point_center_z < 0){
@@ -1544,8 +1596,8 @@ bool GoalDirection::isReachable(const Vector3d & direction){ //float direction[4
 							corner_point_y = obstacle_point_center_y - cspace_half_width;
 
 							county = 0;
-							for(int y_itr = cspace_width-1; y_itr > corner_point_y; y_itr--){
-								for(int z_itr = 0; z_itr < corner_point_z; z_itr ++ ){
+							for(y_itr = cspace_width-1; y_itr > corner_point_y; y_itr--){
+								for(z_itr = 0; z_itr < corner_point_z; z_itr ++ ){
 									// we also have to iterate over this in x direction.. 
 									countx = 0;
 									for(int x_itr = obstacle_point_center_x ;x_itr < obstacle_point_center_x + cspace_half_width ;x_itr++){
@@ -1565,12 +1617,12 @@ bool GoalDirection::isReachable(const Vector3d & direction){ //float direction[4
 							corner_point_z = obstacle_point_center_z - cspace_half_width;
 							corner_point_y = obstacle_point_center_y - cspace_half_width;
 							county = 0;
-							for(int y_itr = cspace_width-1; y_itr > corner_point_y; y_itr--){
+							for(y_itr = cspace_width-1; y_itr > corner_point_y; y_itr--){
 								countz =0;
-								for(int z_itr = cspace_width-1; z_itr > corner_point_z; z_itr-- ){
+								for(z_itr = cspace_width-1; z_itr > corner_point_z; z_itr-- ){
 									// we also have to iterate over this in x direction.. 
 									countx = 0;
-									for(int x_itr = obstacle_point_center_x ;x_itr < obstacle_point_center_x + cspace_half_width ;x_itr++){
+									for(x_itr = obstacle_point_center_x ;x_itr < obstacle_point_center_x + cspace_half_width ;x_itr++){
 										if(sphere_model[countx][obstacle_point_center_y- cspace_width +county][obstacle_point_center_z-cspace_width+countz] == 1){
 											if(x_itr < cspace_length) Cspace[x_itr][y_itr][z_itr] = 1;
 											if(obstacle_point_center_x- countx >0) Cspace[obstacle_point_center_x- countx][y_itr][z_itr]=1;
@@ -1594,11 +1646,11 @@ bool GoalDirection::isReachable(const Vector3d & direction){ //float direction[4
 								corner_point_z = obstacle_point_center_z + cspace_half_width;
 								corner_point_y = obstacle_point_center_y - cspace_half_width;
 								county = 0;
-								for(int y_itr = cspace_width-1; y_itr > corner_point_y; y_itr--){
+								for(y_itr = cspace_width-1; y_itr > corner_point_y; y_itr--){
 									countz = 0;
-									for(int z_itr = obstacle_point_center_z; z_itr < corner_point_z; z_itr ++ ){ 
+									for(z_itr = obstacle_point_center_z; z_itr < corner_point_z; z_itr ++ ){ 
 										countx = 0;
-										for(int x_itr = obstacle_point_center_x ;x_itr < obstacle_point_center_x + cspace_half_width ;x_itr++){
+										for(x_itr = obstacle_point_center_x ;x_itr < obstacle_point_center_x + cspace_half_width ;x_itr++){
 											if(sphere_model[countx][obstacle_point_center_y- cspace_width +county][countz] == 1){
 												if(x_itr < cspace_length){
 													Cspace[x_itr][y_itr][z_itr] = 1;
@@ -1625,12 +1677,12 @@ bool GoalDirection::isReachable(const Vector3d & direction){ //float direction[4
 								corner_point_z = obstacle_point_center_z - cspace_half_width;
 								corner_point_y = obstacle_point_center_y - cspace_half_width;
 								county = 0;
-								for(int y_itr = cspace_width-1; y_itr > corner_point_y; y_itr--){
+								for(y_itr = cspace_width-1; y_itr > corner_point_y; y_itr--){
 									countz =0;
-									for(int z_itr = obstacle_point_center_z; z_itr > corner_point_z; z_itr-- ){
+									for(z_itr = obstacle_point_center_z; z_itr > corner_point_z; z_itr-- ){
 										// we also have to iterate over this in x direction.. 
 										countx = 0;
-										for(int x_itr = obstacle_point_center_x ;x_itr < obstacle_point_center_x + cspace_half_width ;x_itr++){
+										for(x_itr = obstacle_point_center_x ;x_itr < obstacle_point_center_x + cspace_half_width ;x_itr++){
 											if(sphere_model[countx][obstacle_point_center_y- cspace_width +county][countz] == 1){
 												if(x_itr < cspace_length){ 
 													Cspace[x_itr][y_itr][z_itr] = 1;
@@ -1666,10 +1718,10 @@ bool GoalDirection::isReachable(const Vector3d & direction){ //float direction[4
 							corner_point_y = obstacle_point_center_y + cspace_half_width;
 
 							county = 0;
-							for(int y_itr = obstacle_point_center_y; y_itr < corner_point_y; y_itr++){
-								for(int z_itr = 0; z_itr < corner_point_z; z_itr ++ ){ 
+							for(y_itr = obstacle_point_center_y; y_itr < corner_point_y; y_itr++){
+								for(z_itr = 0; z_itr < corner_point_z; z_itr ++ ){ 
 									countx = 0;
-									for(int x_itr = obstacle_point_center_x ;x_itr < obstacle_point_center_x + cspace_half_width ;x_itr++){
+									for(x_itr = obstacle_point_center_x ;x_itr < obstacle_point_center_x + cspace_half_width ;x_itr++){
 										if(sphere_model[countx][county][-obstacle_point_center_z+z_itr] == 1){
 											if(x_itr < cspace_length){
 												Cspace[x_itr][y_itr][z_itr] = 1;
@@ -1696,10 +1748,10 @@ bool GoalDirection::isReachable(const Vector3d & direction){ //float direction[4
 							corner_point_y = obstacle_point_center_y - cspace_half_width;
 
 							county = 0;
-							for(int y_itr = obstacle_point_center_y; y_itr > corner_point_y; y_itr--){
-								for(int z_itr = 0; z_itr < corner_point_z; z_itr ++){ 
+							for(y_itr = obstacle_point_center_y; y_itr > corner_point_y; y_itr--){
+								for(z_itr = 0; z_itr < corner_point_z; z_itr ++){ 
 									countx = 0;
-									for(int x_itr = obstacle_point_center_x; x_itr < obstacle_point_center_x + cspace_half_width ;x_itr++){
+									for(x_itr = obstacle_point_center_x; x_itr < obstacle_point_center_x + cspace_half_width ;x_itr++){
 										if(sphere_model[countx][county][-obstacle_point_center_z+z_itr] == 1){
 											if(x_itr < cspace_length){
 												Cspace[x_itr][y_itr][z_itr] = 1;
@@ -1731,11 +1783,11 @@ bool GoalDirection::isReachable(const Vector3d & direction){ //float direction[4
 							corner_point_y = obstacle_point_center_y + cspace_half_width;
 
 							county = 0;
-							for(int y_itr = obstacle_point_center_y; y_itr < corner_point_y; y_itr++){
+							for(y_itr = obstacle_point_center_y; y_itr < corner_point_y; y_itr++){
 								countz = 0;
-								for(int z_itr = cspace_width-1; z_itr > corner_point_z; z_itr -- ){ 
+								for(z_itr = cspace_width-1; z_itr > corner_point_z; z_itr -- ){ 
 									countx = 0;
-									for(int x_itr = obstacle_point_center_x ;x_itr < obstacle_point_center_x + cspace_half_width ;x_itr++){
+									for(x_itr = obstacle_point_center_x ;x_itr < obstacle_point_center_x + cspace_half_width ;x_itr++){
 										if(sphere_model[countx][county][countz] == 1){
 											if(x_itr < cspace_length){
 												Cspace[x_itr][y_itr][z_itr] = 1;
@@ -1763,11 +1815,11 @@ bool GoalDirection::isReachable(const Vector3d & direction){ //float direction[4
 							corner_point_y = obstacle_point_center_y - cspace_half_width;
 
 							county = 0;
-							for(int y_itr = obstacle_point_center_y; y_itr > corner_point_y; y_itr--){
+							for(y_itr = obstacle_point_center_y; y_itr > corner_point_y; y_itr--){
 								countz = 0;
-								for(int z_itr = cspace_width-1; z_itr > corner_point_z; z_itr--){ 
+								for(z_itr = cspace_width-1; z_itr > corner_point_z; z_itr--){ 
 									countx = 0;
-									for(int x_itr = obstacle_point_center_x; x_itr < obstacle_point_center_x + cspace_half_width ;x_itr++){
+									for(x_itr = obstacle_point_center_x; x_itr < obstacle_point_center_x + cspace_half_width ;x_itr++){
 										if(sphere_model[countx][county][countz] == 1){
 											if(x_itr < cspace_length){
 												Cspace[x_itr][y_itr][z_itr] = 1;
@@ -1795,7 +1847,7 @@ bool GoalDirection::isReachable(const Vector3d & direction){ //float direction[4
 						// gerum bara einfaldan koda fyrir thetta til ad byrja med, er ordinn ansi threyttur a thessu...
 
 						for(county = 0; county< cspace_half_width ; county ++){
-                                                        for(countz = 0; countz< cspace_half_width ; countz ++){
+                            for(countz = 0; countz< cspace_half_width ; countz ++){
 								for(countx = 0; countx< cspace_half_width ; countx ++){
 									if(sphere_model[countx][county][countz] == 1){
 
@@ -1841,7 +1893,7 @@ bool GoalDirection::isReachable(const Vector3d & direction){ //float direction[4
 							}
 						}
 					} //her endar thessi langa ef setning 
-				}
+				} // */ ________________________________________________!!ENDS HERE!! _____________________________________________________________________
 
 			}// her 
 		}
@@ -1918,8 +1970,8 @@ bool GoalDirection::isReachable(const Vector3d & direction){ //float direction[4
 	  		new_front_edge = -1;
 	  		//cout << "in while loop" << endl;
 	  		//cout << "front edge: " << front_edge << endl;
-		  	for (int y_itr = 0; y_itr < cspace_width; y_itr++){
-		  		for (int z_itr=0; z_itr<cspace_width; z_itr++){
+		  	for (y_itr = 0; y_itr < cspace_width; y_itr++){
+		  		for (z_itr=0; z_itr<cspace_width; z_itr++){
 		  			// check if point is in edge points:
 		  			if(edge_points[front_edge][y_itr][z_itr] == 1){
 		  				//cout << "found edge point" << endl;
@@ -1974,8 +2026,8 @@ bool GoalDirection::isReachable(const Vector3d & direction){ //float direction[4
 		  	if(new_front_edge == -1){
 		  		// Now we need to move backwards; count first if all points in cross section are reachable:
 		  		countx = 0;
-		  		for (int y_itr = 0; y_itr < cspace_width; y_itr++){
-		  			for (int z_itr=0; z_itr<cspace_width; z_itr++){
+		  		for (y_itr = 0; y_itr < cspace_width; y_itr++){
+		  			for (z_itr=0; z_itr<cspace_width; z_itr++){
 		  				if(Cspace[front_edge][y_itr][z_itr] == 2) countx += 1;
 		  			}
 		  		}
@@ -1986,7 +2038,7 @@ bool GoalDirection::isReachable(const Vector3d & direction){ //float direction[4
 		  			break;
 		  			//condition =false;
                                 }
-                                cout << "front edge is: " << front_edge ;
+                                cout << " front edge is: " << front_edge ;
 		  		front_edge -= 1;
 		  	}
 		  	else{
@@ -2000,8 +2052,8 @@ bool GoalDirection::isReachable(const Vector3d & direction){ //float direction[4
 		  		// We want to fill the last cross section...
 		  		while(count_new_points !=0){
 		  			count_new_points = 0;
-			  		for (int y_itr = 0; y_itr < cspace_width; y_itr++){
-				  		for (int z_itr=0; z_itr<cspace_width; z_itr++){
+			  		for (y_itr = 0; y_itr < cspace_width; y_itr++){
+				  		for (z_itr=0; z_itr<cspace_width; z_itr++){
 				  			// check if point is in edge points:
 				  			if(edge_points[front_edge][y_itr][z_itr] == 1){
 				  				//cout << "found edge point" << endl;
@@ -2050,28 +2102,28 @@ bool GoalDirection::isReachable(const Vector3d & direction){ //float direction[4
 			    //if(Cspace[front_edge][cspace_half_width][cspace_half_width] == 2){
 			    // no, let's check the total number of points instead, want it to be completely free maybe...
 			    countx = 0;
-			    for (int y_itr = 0; y_itr < cspace_width; y_itr++){
-				  	for (int z_itr=0; z_itr<cspace_width; z_itr++){
+			    for (y_itr = 0; y_itr < cspace_width; y_itr++){
+				  	for (z_itr=0; z_itr<cspace_width; z_itr++){
 				  		// check if point is in edge points:
 						//if(edge_points[front_edge][y_itr][z_itr] == 1){
 				  		if(Cspace[front_edge][y_itr][z_itr] != 1){ // means C space is not occupied in this point.. 
-				  		countx++;
+				  			countx++;
 						}
 					}
-                            }
-                            cout << "count is: "<< countx <<  endl;
+                }
+                cout << "count is: "<< countx <<  endl;
 			    if(countx == Cspaceframe_activepoints){
 			    	return true;
 			    }
-                            else{
-                                cout << "subgoal not reachable" << endl;
-                                return false;
-                            }
-
-                            break;
-                            //condition =false;
-                    }
+                else{
+                    cout << "subgoal not reachable" << endl;
+                    return false;
                 }
+
+                break;
+                //condition =false;
+            }
+        }
 	}
 
 }

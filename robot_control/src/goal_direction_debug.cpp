@@ -921,6 +921,8 @@ bool GoalDirection::isReachable(const Vector3d & direction){ //float direction[4
 
 	int count_points_within = 0;
 	cout << "Loop through points in camera point cloud, 915: " << endl;
+
+	//camera_cloud2 = camera_cloud;
 	for(pcl::PointCloud<pcl::PointXYZ>::iterator it = camera_cloud.begin(); it != camera_cloud.end(); it++){
 		//cout << "in loop" << endl;
 

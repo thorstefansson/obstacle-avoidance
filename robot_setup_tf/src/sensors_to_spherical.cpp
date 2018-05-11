@@ -1,3 +1,5 @@
+// template from:      https://github.com/wsnewman/learning_ros/tree/master/Part_1/example_ros_class/src
+
 #include <iostream>
 #include <cmath>
 #include "math.h"
@@ -145,7 +147,6 @@ void SensorsToSpherical::cameraCallback(const sensor_msgs::PointCloud2ConstPtr& 
 			y = -(it->x);
 			z = -it->y + 0.13;
 			x = it->z + 0.05;
-
 
 			//If x is forward, y left and z up:
 			/*

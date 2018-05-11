@@ -9,11 +9,15 @@ project(robot_control)
 ## is used, also find other catkin packages
 find_package(catkin REQUIRED COMPONENTS
   geometry_msgs
+  octomap_msgs
   pcl_conversions
   pcl_ros
   roscpp
   std_msgs
+  octomap_ros
 )
+
+find_package(octomap REQUIRED)
 
 ## System dependencies are found with CMake's conventions
 # find_package(Boost REQUIRED COMPONENTS system)
@@ -121,6 +125,7 @@ include_directories(
 # include
   ${catkin_INCLUDE_DIRS}
 )
+include_directories(${OCTOMAP_INCLUDE_DIRS})
 
 ## Declare a C++ library
 # add_library(${PROJECT_NAME}
@@ -138,9 +143,15 @@ include_directories(
 # add_executable(${PROJECT_NAME}_node src/robot_control_node.cpp)
 add_executable(goal_direction src/goal_direction.cpp)
 add_executable(goal_direction_debug src/goal_direction_debug.cpp)
+add_executable(motion_computation src/motion_computation.cpp)
+add_executable(robot_control src/robot_control.cpp)
 
 target_link_libraries(goal_direction ${catkin_LIBRARIES})
 target_link_libraries(goal_direction_debug ${catkin_LIBRARIES})
+target_link_libraries(motion_computation ${catkin_LIBRARIES})
+target_link_libraries(robot_control ${catkin_LIBRARIES})
+
+link_directories(${OCTOMAP_LIBRARY_DIRS})
 ## Rename C++ executable without prefix
 ## The above recommended prefix causes long target names, the following renames the
 ## target back to the shorter version for ease of user use

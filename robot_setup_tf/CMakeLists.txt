@@ -9,14 +9,17 @@ project(robot_setup_tf)
 ## is used, also find other catkin packages
 find_package(catkin REQUIRED COMPONENTS
   geometry_msgs
+  octomap_msgs
   laser_geometry
   message_filters
   pcl_conversions
   pcl_ros
   roscpp
   tf
+  octomap_ros
 )
 
+find_package(octomap REQUIRED)
 ## System dependencies are found with CMake's conventions
 # find_package(Boost REQUIRED COMPONENTS system)
 
@@ -123,6 +126,7 @@ include_directories(
 # include
   ${catkin_INCLUDE_DIRS}
 )
+include_directories(${OCTOMAP_INCLUDE_DIRS})
 
 ## Declare a C++ library
 # add_library(${PROJECT_NAME}
@@ -143,20 +147,27 @@ include_directories(
 add_executable(tf_broadcaster src/tf_broadcaster.cpp)
 add_executable(tf_listener src/tf_listener.cpp)
 add_executable(laser_scan_to_point_cloud src/laser_scan_to_point_cloud.cpp)
+add_executable(sonars_to_point_cloud src/sonars_to_point_cloud.cpp)
 add_executable(tf_robot src/tf_robot.cpp)
 add_executable(cloud_to_spherical src/cloud_to_spherical.cpp)
 add_executable(laser_octomap src/laser_octomap.cpp)
 add_executable(sensors_to_spherical src/sensors_to_spherical.cpp)
+add_executable(octomap_to_spherical src/octomap_to_spherical.cpp)
 
 target_link_libraries(tf_robot ${catkin_LIBRARIES})
 
 target_link_libraries(laser_octomap ${catkin_LIBRARIES})
 target_link_libraries(laser_scan_to_point_cloud ${catkin_LIBRARIES})
+target_link_libraries(sonars_to_point_cloud ${catkin_LIBRARIES})
 target_link_libraries(tf_broadcaster ${catkin_LIBRARIES})
 target_link_libraries(tf_listener ${catkin_LIBRARIES})
 
 target_link_libraries(cloud_to_spherical ${catkin_LIBRARIES})
 target_link_libraries(sensors_to_spherical ${catkin_LIBRARIES})
+target_link_libraries(octomap_to_spherical ${catkin_LIBRARIES})
+#target_link_libraries(${OCTOMAP_LIBRARIES})
+
+link_directories(${OCTOMAP_LIBRARY_DIRS})
 ## Rename C++ executable without prefix
 ## The above recommended prefix causes long target names, the following renames the
 ## target back to the shorter version for ease of user use

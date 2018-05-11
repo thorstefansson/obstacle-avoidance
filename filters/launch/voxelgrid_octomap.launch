@@ -1,0 +1,9 @@
+<launch>
+
+<node pkg="filters" type="voxel_filter" name="voxel_filter" output="screen">
+
+    <remap from="input" to="/camera/depth/points"/>
+<remap from="output" to="/cloud_to_octomap"/>
+</node>
+
+</launch>

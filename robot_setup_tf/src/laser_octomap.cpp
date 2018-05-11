@@ -29,7 +29,7 @@ public:
     laser_notifier_.registerCallback(
       boost::bind(&LaserScanToPointCloud::scanCallback, this, _1));
     laser_notifier_.setTolerance(ros::Duration(0.01));
-    scan_pub_ = n_.advertise<sensor_msgs::PointCloud2>("/camera/depth/points",1);
+    scan_pub_ = n_.advertise<sensor_msgs::PointCloud2>("/cloud_to_octomap",1);
     //scan_pub_ = n_.advertise<sensor_msgs::PointCloud2>("/laser_cloud",1);
   }
 
@@ -38,10 +38,11 @@ public:
     sensor_msgs::PointCloud2 cloud;
     try
     {
+
         projector_.transformLaserScanToPointCloud(
           "base_link",*scan_in, cloud,listener_);
 	//ROS_INFO("scan_in:" scan_in
-	//cout << "range 1:" << scan_in->ranges[1] << endl;
+	  //cout << "range 1:" << scan_in->ranges[1] << endl;
     }
     catch (tf::TransformException& e)
     {

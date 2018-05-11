@@ -47,6 +47,9 @@ using namespace Eigen;
 #include "std_msgs/Int16MultiArray.h"
 #include <std_msgs/MultiArrayDimension.h>
 
+#include <tf2/LinearMath/Quaternion.h>
+#include <tf2/LinearMath/Matrix3x3.h>
+
 ros::Publisher pub;
 
 //using namespace cmath

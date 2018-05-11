@@ -38,6 +38,9 @@ using namespace Eigen;
 #include "std_msgs/Int16MultiArray.h"
 #include <std_msgs/MultiArrayDimension.h>
 
+#include <tf2/LinearMath/Quaternion.h>
+#include <tf2/LinearMath/Matrix3x3.h>
+
 ros::Publisher pub;
 
 //using namespace cmath
@@ -101,6 +104,9 @@ private:
     double max_sonar_range;
     float radius_sq;
     float diameter_sq;
+
+    tf2::Quaternion q, q2;
+    double roll, pitch, yaw;
 
 
     double z_turn, w_turn, xy_length_of_direction_vector, xy_length_of_u_sol;

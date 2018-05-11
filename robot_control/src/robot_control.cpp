@@ -5,8 +5,6 @@
 // this header incorporates all the necessary #include files and defines the class "ExampleRosClass"
 #include "robot_control.h"
 
-#include <tf2/LinearMath/Quaternion.h>
-
 //CONSTRUCTOR:  this will get called whenever an instance of this class is created
 // want to put all dirty work of initializations here
 // odd syntax: have to pass nodehandle pointer into constructor for constructor to build subscribers, etc
@@ -48,7 +46,7 @@ RobotControl::RobotControl(ros::NodeHandle* nodehandle):nh_(*nodehandle)
     N = spherical_matrix_width;
 
     // Set maximum translational and angular velocity
-    v_max = 1; // meters per second maximum translational velocity
+    v_max = 0.5; // meters per second maximum translational velocity
     omega_max = pi/4; // rad/sec maximum angular velocity
 
     //nearest_obstacle_distance = 5; // just initialize as something 
@@ -196,25 +194,31 @@ void RobotControl::robotPositionCallback(const geometry_msgs::PoseStampedConstPt
         if(distance_from_goal_point_squared < 0.09) {// if less than 30 cm from goal point...
             
             cout << "goal reached!" << endl;
-
+            double goal_yaw;
             if(!goal_reached){
-                goal_orientation[0] = robot_orientation[0];
-                goal_orientation[1] = robot_orientation[1];
-                goal_orientation[2] = robot_orientation[2];
-                goal_orientation[3] = robot_orientation[3];
+
+            	q[0] = robot_orientation[0];
+            	q[1] = robot_orientation[1];
+            	q[2] = robot_orientation[2];
+            	q[3] = robot_orientation[3];
+            	tf2::Matrix3x3 m(q);
+  				
+  				m.getRPY(roll, pitch, goal_yaw);
                 goal_reached = true;
             }
+
             set_pose.header.frame_id = "map";
             set_pose.header.stamp = ros::Time::now();
             set_pose.pose.position.x = robot_position[0] + direction_vector[0];
             set_pose.pose.position.y = robot_position[1] + direction_vector[1];
             set_pose.pose.position.z = robot_position[2] + direction_vector[2];
 
-              // change this:
-            set_pose.pose.orientation.x = 0;
-            set_pose.pose.orientation.y = 0;
-            set_pose.pose.orientation.z = goal_orientation[2];
-            set_pose.pose.orientation.w = goal_orientation[3];
+            q2.setRPY(0, 0, goal_yaw);
+
+            set_pose.pose.orientation.x = q2.x();
+            set_pose.pose.orientation.y = q2.y();
+            set_pose.pose.orientation.z = q2.z();
+            set_pose.pose.orientation.w = q2.w();
 
             pub_desired_position_.publish(set_pose);
 
@@ -224,13 +228,17 @@ void RobotControl::robotPositionCallback(const geometry_msgs::PoseStampedConstPt
 
             if(orm_control){
                 // do the orm control
+                cout << "in orm control" << endl;
                 
                 // okay let's try flying directly forward, it can be up or down, but not to the sides...
                 // and just turn the robot...
 
                 //xy_length_of_u_sol = sqrt(pow(u_sol[0],2) + pow(u_sol[1],2));
 
+            	// theta needs to be the difference of the angle of robot and the target angle in xy plane...
+                // u sol is in robot frame...
                 theta = atan2(u_sol[1], u_sol[0]);
+
 
                 /*acos(u_sol[0]/xy_length_of_u_sol);
                 if(u_sol[1] < 0){
@@ -266,10 +274,13 @@ void RobotControl::robotPositionCallback(const geometry_msgs::PoseStampedConstPt
                 
 
                 //cout << "theta: " << theta << endl;
-                if(abs(theta) > 10 * pi / 180 && u_sol[2] < 0.8 && u_sol[2] > -0.8){
+                if(abs(theta) > 10 * pi / 180 && u_sol[2] < 0.85 && u_sol[2] > -0.85){
                     // turn the robot..
                     if(!orm_turn_mode){
                         fixed_position = robot_position;
+                        if(fixed_position[2] <0.1){
+                        	fixed_position[2] = 0.5;
+                        }
                         orm_turn_mode = true;
                     }
                     
@@ -278,24 +289,45 @@ void RobotControl::robotPositionCallback(const geometry_msgs::PoseStampedConstPt
                     set_pose.pose.position.x = fixed_position[0];
                     set_pose.pose.position.y = fixed_position[1];
                     set_pose.pose.position.z = fixed_position[2];
-                    z_turn = 1*sin(theta/2);
-                    w_turn = cos(theta/2);
 
                     xy_length_of_direction_vector = sqrt(pow(direction_vector[0],2) + pow(direction_vector[1],2));
 
+					q[0] = robot_orientation[0];
+                	q[1] = robot_orientation[1];
+                	q[2] = robot_orientation[2];
+                	q[3] = robot_orientation[3];
+                	tf2::Matrix3x3 m(q);
+      				double roll, pitch, yaw;
+      				m.getRPY(roll, pitch, yaw);
 
-                    if(xy_length_of_direction_vector >0.2){
-                        set_pose.pose.orientation.x = 0;
-                        set_pose.pose.orientation.y = 0;
-                        set_pose.pose.orientation.z = z_turn;
-                        set_pose.pose.orientation.w = w_turn;                    
-                    }
-                    else{
+
+                    tf2::Quaternion q;
+
+                    cout << "angle in orm control: " << yaw+theta << endl;
+                    q.setRPY(0, 0, yaw+theta);
+
+                    set_pose.pose.orientation.x = q.x();
+                    set_pose.pose.orientation.y = q.y();
+                    set_pose.pose.orientation.z = q.z();
+                    set_pose.pose.orientation.w = q.w();
+
+
+                    /*z_turn = 1*sin(theta+yaw/2);
+                    w_turn = cos(theta+yaw/2);
+
+                    //if(xy_length_of_direction_vector >0.2){
+                    set_pose.pose.orientation.x = 0;
+                    set_pose.pose.orientation.y = 0;
+                    set_pose.pose.orientation.z = z_turn;
+                    set_pose.pose.orientation.w = w_turn;                    
+                    //}
+                    /*else{
+
                         set_pose.pose.orientation.x = 0;
                         set_pose.pose.orientation.y = 0;
                         set_pose.pose.orientation.z = robot_orientation[2];
                         set_pose.pose.orientation.w = robot_orientation[3]; 
-                    }
+                    }*/
 
                     // You can do something like this...
                     /*
@@ -324,15 +356,45 @@ void RobotControl::robotPositionCallback(const geometry_msgs::PoseStampedConstPt
                     set_velocity.header.frame_id = "base_link";
                     set_velocity.header.stamp = ros::Time::now();
 
-                    if(nearest_obstacle_distance > safety_distance){
-                        v = v_max * (half_pi-abs(theta))/half_pi;
+
+                    if(abs(u_sol[2]) > 0.8){
+                    	// this means we go straight down or up
+                    	v = v_max;
+                    	set_pose.pose.orientation.x = robot_orientation[0];
+	                    set_pose.pose.orientation.y = robot_orientation[1];
+	                    set_pose.pose.orientation.z = robot_orientation[2];
+	                    set_pose.pose.orientation.w = robot_orientation[3];
+	                    cout << "robot angle in moving control" << endl;
+
                     }
                     else{
-                        v = v_max * nearest_obstacle_distance/safety_distance * (half_pi-abs(theta))/half_pi;
-                    }
+
+	                    q[0] = robot_orientation[0];
+	                	q[1] = robot_orientation[1];
+	                	q[2] = robot_orientation[2];
+	                	q[3] = robot_orientation[3];
+	                	tf2::Matrix3x3 m(q);
+	      				double roll, pitch, yaw;
+	      				m.getRPY(roll, pitch, yaw);
+
+	                    if(nearest_obstacle_distance > safety_distance){
+	                        v = v_max * (half_pi-abs(theta))/half_pi;
+	                    }
+	                    else{
+	                        v = v_max * nearest_obstacle_distance/safety_distance * (half_pi-abs(theta))/half_pi;
+	                    }
+
+	                    cout << "angle in moving orm control: " << yaw+theta << "yaw: " << yaw << "theta: " << theta << endl;
+	                    q.setRPY(0, 0, yaw+theta);
+	                    set_pose.pose.orientation.x = q.x();
+	                    set_pose.pose.orientation.y = q.y();
+	                    set_pose.pose.orientation.z = q.z();
+	                    set_pose.pose.orientation.w = q.w();
+	                }
                     if(distance_from_goal_point_squared < 4){
                         // lower speed because getting close to target
                          v *= sqrt(distance_from_goal_point_squared)/2+0.05;
+
                     }
                     cout << "nearest_obstacle_distance" << nearest_obstacle_distance << endl; 
                     cout << "u_sol in control: " << u_sol  << "and v is: " << v << endl;
@@ -344,14 +406,20 @@ void RobotControl::robotPositionCallback(const geometry_msgs::PoseStampedConstPt
                     2*cross(robot_orientation_v, cross(robot_orientation_v, u_sol));
 
 
-                    set_velocity.twist.linear.x = u_sol_global[0]*v;
+                    set_pose.pose.position.x = robot_position[0]+ u_sol_global[0]*v;
+                    set_pose.pose.position.y = robot_position[1]+ u_sol_global[1]*v;
+                    set_pose.pose.position.z = robot_position[2]+ u_sol_global[2]*v;
+                    
+
+                    
+                    /*set_velocity.twist.linear.x = u_sol_global[0]*v;
                     set_velocity.twist.linear.y = u_sol_global[1]*v;
                     set_velocity.twist.linear.z = u_sol_global[2]*v;
-
                     set_velocity.twist.angular.x = 0;
                     set_velocity.twist.angular.y = 0;
                     set_velocity.twist.angular.z = 0;
-                    pub_desired_velocity_.publish(set_velocity);
+                    pub_desired_velocity_.publish(set_velocity);*/
+                    pub_desired_position_.publish(set_pose);
 
                     orm_turn_mode = false;
 
@@ -409,10 +477,22 @@ void RobotControl::robotPositionCallback(const geometry_msgs::PoseStampedConstPt
                     set_pose.pose.orientation.w = w_turn;                    
                 }
                 else{
-                    set_pose.pose.orientation.x = 0;
-                    set_pose.pose.orientation.y = 0;
-                    set_pose.pose.orientation.z = robot_orientation[2];
-                    set_pose.pose.orientation.w = robot_orientation[3]; 
+                	q[0] = robot_orientation[0];
+                	q[1] = robot_orientation[1];
+                	q[2] = robot_orientation[2];
+                	q[3] = robot_orientation[3];
+                	tf2::Matrix3x3 m(q);
+      				double roll, pitch, yaw;
+      				m.getRPY(roll, pitch, yaw);
+
+                    tf2::Quaternion q2;
+                    q2.setRPY(0, 0, yaw);
+
+                    cout << "angle in control: " << yaw << endl;
+                    set_pose.pose.orientation.x = q2.x();
+                    set_pose.pose.orientation.y = q2.y();
+                    set_pose.pose.orientation.z = q2.z();
+                    set_pose.pose.orientation.w = q2.w();
                 }
 
 

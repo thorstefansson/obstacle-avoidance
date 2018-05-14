@@ -167,6 +167,7 @@ private:
 
     bool target_calculated;
 
+    double sumx, sumy, sumz;
 
     int sonar_up_limit, sonar_down_limit, range_up, range_down;
 

@@ -696,7 +696,6 @@ void MotionComputation::goalPositionCallback(const geometry_msgs::Vector3ConstPt
 	goal_position.push_back(input->x);
 	goal_position.push_back(input->y);
 	goal_position.push_back(input->z);
-
 	*/
 	//cout<<"here 1"<< endl;
 
@@ -845,7 +844,7 @@ void MotionComputation::goalPositionCallback(const geometry_msgs::Vector3ConstPt
 
 
 
-          //cout << "done sorting sub goals by distance to goal, 715. " ;   // anyways
+          	//cout << "done sorting sub goals by distance to goal, 715. " ;   // anyways
             countx = 0;
             for (m = 0; m < spherical_matrix_height; m++){
                 for (n = 0; n < spherical_matrix_width; n++){
@@ -1367,6 +1366,7 @@ void MotionComputation::goalPositionCallback(const geometry_msgs::Vector3ConstPt
 			int m_gamma, m_min, m_max;
 			float matrix_half_radian_resolution = spherical_matrix_degree_resolution * pi / 360;
 			vector< vector<double> > n_D_vectors_TR,n_D_vectors_TL, n_D_vectors_DR, n_D_vectors_DL;
+			vector< vector<double> > bad_directions_TR,bad_directions_TL, bad_directions_DR, bad_directions_DL;
 
 			
 			// Iterate over spherical matrix to find S2 and n_D vectors for each quarter:
@@ -1374,6 +1374,9 @@ void MotionComputation::goalPositionCallback(const geometry_msgs::Vector3ConstPt
 			if(range_down < 0.1) m_temp_min = 0; // to get rid of shit values at m = 0
 			else m_temp_min= 1;
 
+
+
+			bool bad_angle = false;
 			for(m = m_temp_min; m<M; m++){
 				for(n=0;n<N;n++){
 					// check if obstacle is present in the direction, 
@@ -1398,6 +1401,8 @@ void MotionComputation::goalPositionCallback(const geometry_msgs::Vector3ConstPt
 						
 						if(sphere_matrix[m][n] < safety_distance + robot_radius){
 							gamma += (pi - gamma)*(1 - (sphere_matrix[m][n]-robot_radius)/safety_distance);
+							// add angle to some collective bad direction for each quarter.......
+							bad_angle = true;
 						}
 						 
 						//check what quadrant obstacle is in.. TR 0, DR 1, DL 2, TL 3;
@@ -1435,6 +1440,9 @@ void MotionComputation::goalPositionCallback(const geometry_msgs::Vector3ConstPt
 										}
 									}
 								}
+								if(bad_angle){
+									bad_directions_DL.push_back(row1);
+								}
 							}
 							else{
 								// in TL
@@ -1461,6 +1469,9 @@ void MotionComputation::goalPositionCallback(const geometry_msgs::Vector3ConstPt
 											S_nD_TL[m1][n1]=true;
 										}
 									}
+								}
+								if(bad_angle){
+									bad_directions_TL.push_back(row1);
 								}
 							}
 						}
@@ -1493,6 +1504,10 @@ void MotionComputation::goalPositionCallback(const geometry_msgs::Vector3ConstPt
 										}
 									}
 								}
+								if(bad_angle){
+									bad_directions_TR.push_back(row1);
+								}
+
 							}
 							else{
 								// in DR
@@ -1520,6 +1535,9 @@ void MotionComputation::goalPositionCallback(const geometry_msgs::Vector3ConstPt
 										}
 									}
 								}
+								if(bad_angle){
+									bad_directions_DR.push_back(row1);
+								}
 							}
 						}
 					}
@@ -1533,15 +1551,23 @@ void MotionComputation::goalPositionCallback(const geometry_msgs::Vector3ConstPt
 				}
 				cout<< endl;
 			}
-
-			cout << "S_nD_DL without S1: " << endl;
+*/
+			/*cout << "S_nD_DL without S1: " << endl;
 			for(m=M-1;m>=0;m--){
 				for(n=N-1;n>=0;n--){
 				cout << S_nD_DL[m][n] << " ";
 				}
 				cout<< endl;
 			}*/
-	//}/*
+	//}
+
+			/*cout << "S_DL bound before deleting certain points: " << endl;
+			for(m=M-1;m>=0;m--){
+				for(n=N-1;n>=0;n--){
+				cout << S_DL_bound[m][n] << " ";
+				}
+				cout<< endl;
+			}*/
 			// ------------------------------------Now construct S_1-----------------------------------------
 
 			// We have the n_D vectors for each quadrant
@@ -1729,6 +1755,22 @@ void MotionComputation::goalPositionCallback(const geometry_msgs::Vector3ConstPt
 				cout<< endl;
 			}*/
 
+			/*cout << "S_nD_DL: " << endl;
+			for(m=M-1;m>=0;m--){
+				for(n=N-1;n>=0;n--){
+				cout << S_nD_DL[m][n] << " ";
+				}
+				cout<< endl;
+			}*/
+
+			/*cout << "S_DL bound after: " << endl;
+			for(m=M-1;m>=0;m--){
+				for(n=N-1;n>=0;n--){
+				cout << S_DL_bound[m][n] << " ";
+				}
+				cout<< endl;
+			}*/
+
 			// ---------------------- Now find the most promising direction of motion ---------------------------
 
 			// Check if there exist any free directions:
@@ -1904,6 +1946,8 @@ void MotionComputation::goalPositionCallback(const geometry_msgs::Vector3ConstPt
 			}
 			else{
 				// ------------------------------------------This means there is no free direction-----------------------------------
+				//Vector3d 
+				vector <double> sum_vector;
 				if(S_nD_TL[m_targ][n_targ]){
 					// calculate u^TL_dom, the direction on the boundary that is closest to the target direction...
 
@@ -1931,6 +1975,28 @@ void MotionComputation::goalPositionCallback(const geometry_msgs::Vector3ConstPt
 					}
 					else{
 						cout << "bound directions for TL < 2, no free directions" << endl;
+						// in this case calculate u_TL_dom from the bad directions... 
+						sumx=0, sumy=0, sumz=0;
+						if(bad_directions_TL.size() > 0){
+							for (int i = 0 ; i < bad_directions_TL.size(); i++){
+								//sum_vector += bad_directions_TL[i];
+								sumx +=bad_directions_TL[i][0];
+								sumy +=bad_directions_TL[i][1];
+								sumz +=bad_directions_TL[i][2];
+							}
+							//sum_vector /= bad_directions_TL.size();
+							sumx /=bad_directions_TL.size();
+							sumy /=bad_directions_TL.size();
+							sumz /=bad_directions_TL.size();
+							
+							u_TL_dom[0] = -sumx;
+							u_TL_dom[1] = -sumy;
+							u_TL_dom[2] = -sumz;
+							use_u_TL_dom = true;
+							u_targ_S_nD_count++;
+
+							cout  << "u_TL_dom: " << u_TL_dom << endl;
+						}
 					}					
 				}
 				if(S_nD_TR[m_targ][n_targ]){
@@ -1960,6 +2026,26 @@ void MotionComputation::goalPositionCallback(const geometry_msgs::Vector3ConstPt
 					}
 					else{
 						cout << "bound directions for TR < 2, no free directions" << endl;
+						// in this case calculate u_TR_dom from the bad directions... 
+						sumx=0, sumy=0, sumz=0;
+						if(bad_directions_TL.size() > 0){
+							for (int i = 0 ; i < bad_directions_TR.size(); i++){
+								//sum_vector += bad_directions_TL[i];
+								sumx +=bad_directions_TR[i][0];
+								sumy +=bad_directions_TR[i][1];
+								sumz +=bad_directions_TR[i][2];
+							}
+							//sum_vector /= bad_directions_TL.size();
+							sumx /=bad_directions_TR.size();
+							sumy /=bad_directions_TR.size();
+							sumz /=bad_directions_TR.size();
+							
+							u_TR_dom[0] = -sumx;
+							u_TR_dom[1] = -sumy;
+							u_TR_dom[2] = -sumz;
+							use_u_TR_dom = true;
+							u_targ_S_nD_count++;
+						}
 					}					
 				}
 				if(S_nD_DR[m_targ][n_targ]){
@@ -1989,6 +2075,28 @@ void MotionComputation::goalPositionCallback(const geometry_msgs::Vector3ConstPt
 					}
 					else{
 						cout << "bound directions for DR < 2, no free directions" << endl;
+						// in this case calculate u_TL_dom from the bad directions... 
+						sumx=0, sumy=0, sumz=0;
+						if(bad_directions_DR.size() > 0){
+							for (int i = 0 ; i < bad_directions_DR.size(); i++){
+								//sum_vector += bad_directions_TL[i];
+								sumx +=bad_directions_DR[i][0];
+								sumy +=bad_directions_DR[i][1];
+								sumz +=bad_directions_DR[i][2];
+							}
+							//sum_vector /= bad_directions_TL.size();
+							sumx /=bad_directions_DR.size();
+							sumy /=bad_directions_DR.size();
+							sumz /=bad_directions_DR.size();
+							
+							u_DR_dom[0] = -sumx;
+							u_DR_dom[1] = -sumy;
+							u_DR_dom[2] = -sumz;
+							use_u_DR_dom = true;
+							u_targ_S_nD_count++;
+							cout  << "u_DR_dom: " << u_DR_dom << endl;
+
+						}
 					}					
 				}
 				if(S_nD_DL[m_targ][n_targ]){
@@ -2018,6 +2126,27 @@ void MotionComputation::goalPositionCallback(const geometry_msgs::Vector3ConstPt
 					}
 					else{
 						cout << "bound directions for DL < 2, no free directions" << endl;
+						// in this case calculate u_TL_dom from the bad directions... 
+						sumx=0, sumy=0, sumz=0;
+						if(bad_directions_DL.size() > 0){
+							for (int i = 0 ; i < bad_directions_DL.size(); i++){
+								//sum_vector += bad_directions_TL[i];
+								sumx +=bad_directions_DL[i][0];
+								sumy +=bad_directions_DL[i][1];
+								sumz +=bad_directions_DL[i][2];
+							}
+							//sum_vector /= bad_directions_TL.size();
+							sumx /= bad_directions_DL.size();
+							sumy /= bad_directions_DL.size();
+							sumz /= bad_directions_DL.size();
+							
+							u_DL_dom[0] = -sumx;
+							u_DL_dom[1] = -sumy;
+							u_DL_dom[2] = -sumz;
+							use_u_DL_dom = true;
+							u_targ_S_nD_count++;
+							cout  << "u_DR_dom: " << u_DR_dom << endl;
+						}
 					}					
 				}
 			}
@@ -2131,12 +2260,16 @@ void MotionComputation::goalPositionCallback(const geometry_msgs::Vector3ConstPt
 			}
 
 			//cout << "u_sol : " << u_sol << endl;
+			// To send vector with correct length instead of unitary vector:
+    		cout << "u_sol:" << u_sol << endl;
+
+    		u_sol *= target_distance;
 
 	    } // end of if (!nothing_reachable)
 	    else{
 	    	// put something into u_sol that makes it evident it has not been published in a normal way
 	    	cout << "nothing_reachable !" << endl;
-	    	u_sol[0] = 3;
+	    	u_sol[0] = 1000;
 	    	u_sol[1] = 0;
 	    	u_sol[2] = 0;
 	    }
@@ -2144,10 +2277,11 @@ void MotionComputation::goalPositionCallback(const geometry_msgs::Vector3ConstPt
 	else{
 		cout << "target not calculated!" << endl;
     	// put something into u_sol that makes it evident it has not been published in a normal way
-    	u_sol[0] = 3;
+    	u_sol[0] = 1000;
     	u_sol[1] = 0;
     	u_sol[2] = 0;
     }
+
     u_sol_vector.x = u_sol[0];
     u_sol_vector.y = u_sol[1];
     u_sol_vector.z = u_sol[2];
@@ -3584,1479 +3718,3 @@ bool MotionComputation::isReachable(const Vector3d & direction){
 	}
 
 }
-
-
-
-/*
-				if (obstacle_point_center_x + cspace_half_width < cspace_length && obstacle_point_center_x - cspace_half_width > 0 ){
-                    if(obstacle_point_center_y < 0){
-						// This means the center is to the left of the matrix
-						// so we only have to fill up the right part of the sphere
-						if (obstacle_point_center_z < 0){
-							// Obstacle point below matrix
-							// so only fill up upper right half of sphere
-
-							// Perhaps we can just iterate over the values that are inside the obstacle matrix... 
-							// So the point we want to get to is:
-
-							//technically we are dealing with a corner line, but it is a point in the yz plane
-							corner_point_z = obstacle_point_center_z + cspace_half_width;
-							corner_point_y = obstacle_point_center_y + cspace_half_width;
-
-							for( y_itr = 0; y_itr < corner_point_y; y_itr++){
-								for( z_itr = 0; z_itr < corner_point_z; z_itr ++ ){
-									// we also have to iterate over this in x direction.. 
-									countx = 0;
-									for( x_itr = obstacle_point_center_x ;x_itr < obstacle_point_center_x + cspace_half_width ;x_itr++){
-										if(sphere_model[countx][-obstacle_point_center_y+y_itr][-obstacle_point_center_z+z_itr] == 1){
-											Cspace[x_itr][y_itr][z_itr] = 1;
-											Cspace[obstacle_point_center_x- countx][y_itr][z_itr]=1;
-										}
-									countx++;
-									}
-								}
-							}
-						}
-						else if (obstacle_point_center_z > cspace_width){
-							// Obstacle point above matrix
-							// only fill in bottom right half of sphere
-
-							// Perhaps we can just iterate over the values that are inside the obstacle matrix... 
-							// So the point we want to get to is:
-
-							corner_point_z = obstacle_point_center_z - cspace_half_width;
-							corner_point_y = obstacle_point_center_y + cspace_half_width;
-
-							for(y_itr = 0; y_itr < corner_point_y; y_itr++){
-								countz =0;
-								for(z_itr = cspace_width-1; z_itr > corner_point_z; z_itr-- ){
-									// we also have to iterate over this in x direction.. 
-									countx = 0;
-									for( x_itr = obstacle_point_center_x ;x_itr < obstacle_point_center_x + cspace_half_width ;x_itr++){
-										if(sphere_model[countx][-obstacle_point_center_y+y_itr][obstacle_point_center_z-cspace_width+countz] == 1){
-											Cspace[x_itr][y_itr][z_itr] = 1;
-											Cspace[obstacle_point_center_x- countx][y_itr][z_itr]=1;
-										}
-									countx++;
-									}
-								countz++;
-								}
-							}
-						}
-						else{
-							// fill in the whole right half 
-							// Athugum hvort vid seum fyrir ofan eda nedan midju:
-
-							if(obstacle_point_center_z< cspace_half_width){
-								// this means we are below middle
-								// so we need to continuously check if the lower part of our sphere is out of bounds
-
-								//technically we are dealing with a corner line, but it is a point in the yz plane
-								corner_point_z = obstacle_point_center_z + cspace_half_width;
-								corner_point_y = obstacle_point_center_y + cspace_half_width;
-
-								for(y_itr = 0; y_itr < corner_point_y; y_itr++){
-									countz = 0;
-									for(z_itr = obstacle_point_center_z; z_itr < corner_point_z; z_itr ++ ){ 
-										countx = 0;
-										for( x_itr = obstacle_point_center_x ;x_itr < obstacle_point_center_x + cspace_half_width ;x_itr++){
-											if(sphere_model[countx][-obstacle_point_center_y+y_itr][countz] == 1){
-												Cspace[x_itr][y_itr][z_itr] = 1;
-												if(obstacle_point_center_z - countz >= 0) Cspace[x_itr][y_itr][obstacle_point_center_z - countz] = 1;
-												Cspace[obstacle_point_center_x- countx][y_itr][z_itr]=1;
-												if(obstacle_point_center_z - countz >= 0){
-													Cspace[obstacle_point_center_x- countx][y_itr][obstacle_point_center_z - countz]=1;
-												} 
-											}
-											countx++;
-										}
-										countz++;
-									}
-								}
-							}
-							else{
-								// this means we are above middle
-								// so we need to continuously monitor that the upper part of our sphere is not out of bounds
-
-								corner_point_z = obstacle_point_center_z - cspace_half_width;
-								corner_point_y = obstacle_point_center_y + cspace_half_width;
-
-								for(y_itr = 0; y_itr < corner_point_y; y_itr++){
-									countz =0;
-									for(z_itr = obstacle_point_center_z; z_itr > corner_point_z; z_itr-- ){
-										// we also have to iterate over this in x direction.. 
-										countx = 0;
-										for(x_itr = obstacle_point_center_x ;x_itr < obstacle_point_center_x + cspace_half_width ;x_itr++){
-											if(sphere_model[countx][-obstacle_point_center_y+y_itr][countz] == 1){ 
-												Cspace[x_itr][y_itr][z_itr] = 1;
-												if(obstacle_point_center_z + countz < cspace_width) Cspace[x_itr][y_itr][obstacle_point_center_z + countz] = 1;
-												Cspace[obstacle_point_center_x- countx][y_itr][z_itr]=1;
-												if(obstacle_point_center_z + countz < cspace_width){
-													Cspace[obstacle_point_center_x- countx][y_itr][obstacle_point_center_z + countz] = 1;
-												} 												
-											}
-										countx++;
-										}
-									countz++;
-									}
-								}
-							}
-						}
-					}
-					else if (obstacle_point_center_y > cspace_width){
-						// This means the obstacle point is to the right of the matrix
-						// so we only have to fill up the left part of the sphere
-						if (obstacle_point_center_z < 0){
-							// Obstacle point below matrix
-							// so only fill up upper left half of sphere
-
-							corner_point_z = obstacle_point_center_z + cspace_half_width;
-							corner_point_y = obstacle_point_center_y - cspace_half_width;
-
-							county = 0;
-							for(y_itr = cspace_width-1; y_itr > corner_point_y; y_itr--){
-								for(z_itr = 0; z_itr < corner_point_z; z_itr ++ ){
-									// we also have to iterate over this in x direction.. 
-									countx = 0;
-									for(x_itr = obstacle_point_center_x ;x_itr < obstacle_point_center_x + cspace_half_width ;x_itr++){
-										if(sphere_model[countx][obstacle_point_center_y- cspace_width +county][-obstacle_point_center_z+z_itr] == 1){
-											Cspace[x_itr][y_itr][z_itr] = 1;
-											Cspace[obstacle_point_center_x - countx][y_itr][z_itr]=1;
-										}
-									countx++;
-									}
-								}
-								county++;
-							}
-						}
-						else if (obstacle_point_center_z > cspace_width){
-							// Obstacle point above matrix
-							// only fill in bottom left half of sphere
-							corner_point_z = obstacle_point_center_z - cspace_half_width;
-							corner_point_y = obstacle_point_center_y - cspace_half_width;
-							county = 0;
-							for(y_itr = cspace_width-1; y_itr > corner_point_y; y_itr--){
-								countz =0;
-								for(z_itr = cspace_width-1; z_itr > corner_point_z; z_itr-- ){
-									// we also have to iterate over this in x direction.. 
-									countx = 0;
-									for(x_itr = obstacle_point_center_x ;x_itr < obstacle_point_center_x + cspace_half_width ;x_itr++){
-										if(sphere_model[countx][obstacle_point_center_y- cspace_width +county][obstacle_point_center_z-cspace_width+countz] == 1){
-											Cspace[x_itr][y_itr][z_itr] = 1;
-											Cspace[obstacle_point_center_x- countx][y_itr][z_itr]=1;
-										}
-										countx++;
-									}
-									countz++;
-								}
-								county++;
-							}
-						}
-						else{
-							// fill in the whole left half
-							// Athugum hvort vid seum fyrir ofan eda nedan midju:
-
-							if(obstacle_point_center_z< cspace_half_width ){
-								// this means we are below middle
-								// so we need to continuously check if the lower part of our sphere is out of bounds
-
-								//technically we are dealing with a corner line, but it is a point in the yz plane
-								corner_point_z = obstacle_point_center_z + cspace_half_width;
-								corner_point_y = obstacle_point_center_y - cspace_half_width;
-								county = 0;
-								for(y_itr = cspace_width-1; y_itr > corner_point_y; y_itr--){
-									countz = 0;
-									for(z_itr = obstacle_point_center_z; z_itr < corner_point_z; z_itr ++ ){ 
-										countx = 0;
-										for(x_itr = obstacle_point_center_x ;x_itr < obstacle_point_center_x + cspace_half_width ;x_itr++){
-											if(sphere_model[countx][obstacle_point_center_y- cspace_width +county][countz] == 1){
-												Cspace[x_itr][y_itr][z_itr] = 1;
-												if(obstacle_point_center_z - countz >= 0) Cspace[x_itr][y_itr][obstacle_point_center_z - countz] = 1;
-												Cspace[obstacle_point_center_x- countx][y_itr][z_itr]=1;
-												if(obstacle_point_center_z - countz >= 0){
-													Cspace[obstacle_point_center_x- countx][y_itr][obstacle_point_center_z - countz]=1;
-												}	 
-											}
-											countx++;
-										}
-										countz++;
-									}
-									county++;
-								}
-							}
-							else{
-								// this means we are above middle
-								// so we need to continuously monitor that the upper part of our sphere is not out of bounds
-
-								corner_point_z = obstacle_point_center_z - cspace_half_width;
-								corner_point_y = obstacle_point_center_y - cspace_half_width;
-								county = 0;
-								for(y_itr = cspace_width-1; y_itr > corner_point_y; y_itr--){
-									countz =0;
-									for(z_itr = obstacle_point_center_z; z_itr > corner_point_z; z_itr-- ){
-										// we also have to iterate over this in x direction.. 
-										countx = 0;
-										for(x_itr = obstacle_point_center_x ;x_itr < obstacle_point_center_x + cspace_half_width ;x_itr++){
-											if(sphere_model[countx][obstacle_point_center_y- cspace_width +county][countz] == 1){ 
-												Cspace[x_itr][y_itr][z_itr] = 1;
-												if(obstacle_point_center_z + countz < cspace_width){
-													Cspace[x_itr][y_itr][obstacle_point_center_z + countz] = 1;}
-												Cspace[obstacle_point_center_x- countx][y_itr][z_itr]=1;
-												if(obstacle_point_center_z + countz < cspace_width){
-													Cspace[obstacle_point_center_x- countx][y_itr][obstacle_point_center_z + countz] = 1;
-												} 
-																							
-											}
-											countx++;
-										}
-										countz++;
-									}
-									county++;
-								}
-							}
-						}
-					}
-					else if (obstacle_point_center_z < 0){
-						// Obstacle point below matrix
-						// fill up whole upper half of sphere
-
-						//well now, this is getting (unnecessary) lenghty, for only a little bit faster program... 
-						// Let's check if we are to the right or left of the center:
-						if(obstacle_point_center_y< cspace_half_width){
-							// this means we are left of center, below matrix
-							// need to monitor that left part of sphere does not go out of bounds
-
-							corner_point_z = obstacle_point_center_z + cspace_half_width;
-							corner_point_y = obstacle_point_center_y + cspace_half_width;
-
-							county = 0;
-							for(y_itr = obstacle_point_center_y; y_itr < corner_point_y; y_itr++){
-								for(z_itr = 0; z_itr < corner_point_z; z_itr ++ ){ 
-									countx = 0;
-									for(x_itr = obstacle_point_center_x ;x_itr < obstacle_point_center_x + cspace_half_width ;x_itr++){
-										if(sphere_model[countx][county][-obstacle_point_center_z+z_itr] == 1){
-											Cspace[x_itr][y_itr][z_itr] = 1;
-											if(obstacle_point_center_y - county >= 0) Cspace[x_itr][obstacle_point_center_y - county][z_itr] = 1;
-											Cspace[obstacle_point_center_x- countx][y_itr][z_itr]=1;
-											if(obstacle_point_center_y - county >= 0){
-												Cspace[obstacle_point_center_x- countx][obstacle_point_center_y - county][z_itr]=1;
-											}
-											
-										}
-										countx++;
-									}
-								}
-								county++;
-							}
-						}
-						else{
-							// this means we are right of center, below matrix
-							// need to monitor that right part of sphere does not go out of bounds
-
-							corner_point_z = obstacle_point_center_z + cspace_half_width;
-							corner_point_y = obstacle_point_center_y - cspace_half_width;
-
-							county = 0;
-							for(y_itr = obstacle_point_center_y; y_itr > corner_point_y; y_itr--){
-								for(z_itr = 0; z_itr < corner_point_z; z_itr ++){ 
-									countx = 0;
-									for(x_itr = obstacle_point_center_x; x_itr < obstacle_point_center_x + cspace_half_width ;x_itr++){
-										if(sphere_model[countx][county][-obstacle_point_center_z+z_itr] == 1){
-											
-											Cspace[x_itr][y_itr][z_itr] = 1;
-											if(obstacle_point_center_y + county < cspace_width) Cspace[x_itr][obstacle_point_center_y + county][z_itr] = 1;
-
-											Cspace[obstacle_point_center_x- countx][y_itr][z_itr]=1;
-											if(obstacle_point_center_y + county < cspace_width){
-												Cspace[obstacle_point_center_x- countx][obstacle_point_center_y + county][z_itr]=1;
-											}
-											
-										}
-										countx++;
-									}
-								}
-								county++;
-							}
-						}
-					}
-					else if (obstacle_point_center_z > cspace_width){
-						// Obstacle point above matrix
-						// fill whole bottom half of sphere
-
-						//ugh, let's check if we are to right or left of middle point.. 
-						if(obstacle_point_center_y< cspace_half_width){
-							// this means we are left of center
-							// need to monitor that left part of sphere does not go out of bounds
-							corner_point_z = obstacle_point_center_z - cspace_half_width;
-							corner_point_y = obstacle_point_center_y + cspace_half_width;
-
-							county = 0;
-							for(y_itr = obstacle_point_center_y; y_itr < corner_point_y; y_itr++){
-								countz = 0;
-								for(z_itr = cspace_width-1; z_itr > corner_point_z; z_itr -- ){ 
-									countx = 0;
-									for(x_itr = obstacle_point_center_x ;x_itr < obstacle_point_center_x + cspace_half_width ;x_itr++){
-										if(sphere_model[countx][county][countz] == 1){
-											Cspace[x_itr][y_itr][z_itr] = 1;
-											if(obstacle_point_center_y - county >= 0) Cspace[x_itr][obstacle_point_center_y - county][z_itr] = 1;
-											Cspace[obstacle_point_center_x- countx][y_itr][z_itr]=1;
-											if(obstacle_point_center_y - county >= 0){
-												Cspace[obstacle_point_center_x- countx][obstacle_point_center_y - county][z_itr]=1;
-											}
-											 
-										}
-										countx++;
-									}
-									countz++;
-								}
-								county++;
-							}
-						}
-						else{
-							// this means we are right of center
-							// need to monitor that right part of sphere does not go out of bounds
-
-							corner_point_z = obstacle_point_center_z - cspace_half_width;
-							corner_point_y = obstacle_point_center_y - cspace_half_width;
-
-							county = 0;
-							for(y_itr = obstacle_point_center_y; y_itr > corner_point_y; y_itr--){
-								countz = 0;
-								for(z_itr = cspace_width-1; z_itr > corner_point_z; z_itr--){ 
-									countx = 0;
-									for(x_itr = obstacle_point_center_x; x_itr < obstacle_point_center_x + cspace_half_width ;x_itr++){
-										if(sphere_model[countx][county][countz] == 1){
-											Cspace[x_itr][y_itr][z_itr] = 1;
-											if(obstacle_point_center_y + county < cspace_width) Cspace[x_itr][obstacle_point_center_y + county][z_itr] = 1;
-											Cspace[obstacle_point_center_x- countx][y_itr][z_itr]=1;
-											if(obstacle_point_center_y + county < cspace_width){
-												Cspace[obstacle_point_center_x- countx][obstacle_point_center_y + county][z_itr]=1;
-											}
-											
-										}
-										countx++;
-									}
-									countz++;
-								}
-								county++;
-							}
-						}
-
-					}
-					else{
-						// Fill in the whole sphere
-
-						// gerum bara einfaldan koda fyrir thetta til ad byrja med, er ordinn ansi threyttur a thessu...
-
-						for(county = 0; county< cspace_half_width ; county ++){
-                            for(countz = 0; countz< cspace_half_width; countz ++){
-								for(countx = 0; countx< cspace_half_width ; countx ++){
-
-									if(sphere_model[countx][county][countz] == 1){
-
-                                        if(obstacle_point_center_y+county<cspace_width){
-                                                if(obstacle_point_center_z+countz<cspace_width){ 
-                                                        Cspace[obstacle_point_center_x+countx][obstacle_point_center_y+county][obstacle_point_center_z+countz] =1;
-                                                        Cspace[obstacle_point_center_x-countx][obstacle_point_center_y+county][obstacle_point_center_z+countz] =1;
-                                                }
-                                                if(obstacle_point_center_z-countz >=0){
-                                                        Cspace[obstacle_point_center_x+countx][obstacle_point_center_y+county][obstacle_point_center_z-countz] =1;
-                                                        Cspace[obstacle_point_center_x-countx][obstacle_point_center_y+county][obstacle_point_center_z-countz] =1;
-                                                }
-                                        }
-                                        if(obstacle_point_center_y-county >=0){
-                                                if(obstacle_point_center_z+countz<cspace_width){
-                                                        Cspace[obstacle_point_center_x+countx][obstacle_point_center_y-county][obstacle_point_center_z+countz] =1;
-                                                        Cspace[obstacle_point_center_x-countx][obstacle_point_center_y-county][obstacle_point_center_z+countz] =1;
-                                                }
-                                                if(obstacle_point_center_z-countz >=0){
-                                                        Cspace[obstacle_point_center_x+countx][obstacle_point_center_y-county][obstacle_point_center_z-countz] =1;
-                                                        Cspace[obstacle_point_center_x-countx][obstacle_point_center_y-county][obstacle_point_center_z-countz] =1;
-                                                }
-                                        }
-									}
-								}
-							}
-						}
-					}
-				}
-				else{
-					if(obstacle_point_center_y < 0){
-						// This means the center is to the left of the matrix
-						// so we only have to fill up the right part of the sphere
-						if (obstacle_point_center_z < 0){
-							// Obstacle point below matrix
-							// so only fill up upper right half of sphere
-
-							// Perhaps we can just iterate over the values that are inside the obstacle matrix... 
-							// So the point we want to get to is:
-
-							//technically we are dealing with a corner line, but it is a point in the yz plane
-							corner_point_z = obstacle_point_center_z + cspace_half_width;
-							corner_point_y = obstacle_point_center_y + cspace_half_width;
-
-							for(y_itr = 0; y_itr < corner_point_y; y_itr++){
-								for(z_itr = 0; z_itr < corner_point_z; z_itr ++ ){
-									// we also have to iterate over this in x direction.. 
-									countx = 0;
-									for(x_itr = obstacle_point_center_x ;x_itr < obstacle_point_center_x + cspace_half_width ;x_itr++){
-										if(sphere_model[countx][-obstacle_point_center_y+y_itr][-obstacle_point_center_z+z_itr] == 1){
-											if(x_itr < cspace_length) Cspace[x_itr][y_itr][z_itr] = 1;
-											if(obstacle_point_center_x- countx >0) Cspace[obstacle_point_center_x- countx][y_itr][z_itr]=1;
-										}
-									countx++;
-									}
-								}
-							}
-						}
-						else if (obstacle_point_center_z > cspace_width){
-							// Obstacle point above matrix
-							// only fill in bottom right half of sphere
-
-							// Perhaps we can just iterate over the values that are inside the obstacle matrix... 
-							// So the point we want to get to is:
-
-							corner_point_z = obstacle_point_center_z - cspace_half_width;
-							corner_point_y = obstacle_point_center_y + cspace_half_width;
-
-							for(y_itr = 0; y_itr < corner_point_y; y_itr++){
-								countz =0;
-								for(z_itr = cspace_width-1; z_itr > corner_point_z; z_itr-- ){
-									// we also have to iterate over this in x direction.. 
-									countx = 0;
-									for(x_itr = obstacle_point_center_x ;x_itr < obstacle_point_center_x + cspace_half_width ;x_itr++){
-										if(sphere_model[countx][-obstacle_point_center_y+y_itr][obstacle_point_center_z-cspace_width+countz] == 1){
-											if(x_itr < cspace_length) Cspace[x_itr][y_itr][z_itr] = 1;
-											if(obstacle_point_center_x- countx >0) Cspace[obstacle_point_center_x- countx][y_itr][z_itr]=1;
-										}
-									countx++;
-									}
-								countz++;
-								}
-							}
-						}
-						else{
-							// fill in the whole right half 
-							// Athugum hvort vid seum fyrir ofan eda nedan midju:
-
-							if(obstacle_point_center_z< cspace_half_width){
-								// this means we are below middle
-
-                                                            // I guess we also have to check if the sphere goes out of bounds on either side length wise
-
-                                                            //we can then iterate from the bottom left half of the matrix...
-
-								//technically we are dealing with a corner line, but it is a point in the yz plane
-								corner_point_z = obstacle_point_center_z + cspace_half_width;
-								corner_point_y = obstacle_point_center_y + cspace_half_width;
-
-								for(y_itr = 0; y_itr < corner_point_y; y_itr++){
-									countz = 0;
-									for(z_itr = obstacle_point_center_z; z_itr < corner_point_z; z_itr ++ ){ 
-										countx = 0;
-										for(x_itr = obstacle_point_center_x ;x_itr < obstacle_point_center_x + cspace_half_width ;x_itr++){
-											if(sphere_model[countx][-obstacle_point_center_y+y_itr][countz] == 1){
-												if(x_itr < cspace_length){
-													Cspace[x_itr][y_itr][z_itr] = 1;
-													if(obstacle_point_center_z - countz >= 0) Cspace[x_itr][y_itr][obstacle_point_center_z - countz] = 1;
-												} 
-												if(obstacle_point_center_x- countx >0){
-													Cspace[obstacle_point_center_x- countx][y_itr][z_itr]=1;
-													if(obstacle_point_center_z - countz >= 0){
-														Cspace[obstacle_point_center_x- countx][y_itr][obstacle_point_center_z - countz]=1;
-													}
-												} 
-											}
-											countx++;
-										}
-										countz++;
-									}
-								}
-							}
-							else{
-								// this means we are above middle
-								// so we need to continuously monitor that the upper part of our sphere is not out of bounds
-
-								corner_point_z = obstacle_point_center_z - cspace_half_width;
-								corner_point_y = obstacle_point_center_y + cspace_half_width;
-
-								for(y_itr = 0; y_itr < corner_point_y; y_itr++){
-									countz =0;
-									for(z_itr = obstacle_point_center_z; z_itr > corner_point_z; z_itr-- ){
-										// we also have to iterate over this in x direction.. 
-										countx = 0;
-										for(x_itr = obstacle_point_center_x ;x_itr < obstacle_point_center_x + cspace_half_width ;x_itr++){
-											if(sphere_model[countx][-obstacle_point_center_y+y_itr][countz] == 1){
-												if(x_itr < cspace_length){ 
-													Cspace[x_itr][y_itr][z_itr] = 1;
-													if(obstacle_point_center_z + countz < cspace_width) Cspace[x_itr][y_itr][obstacle_point_center_z + countz] = 1;
-												}
-												if(obstacle_point_center_x- countx >0){ 
-													Cspace[obstacle_point_center_x- countx][y_itr][z_itr]=1;
-													if(obstacle_point_center_z + countz < cspace_width){
-														Cspace[obstacle_point_center_x- countx][y_itr][obstacle_point_center_z + countz] = 1;
-													} 
-												}											
-											}
-										countx++;
-										}
-									countz++;
-									}
-								}
-							}
-						}
-					}
-	                else if (obstacle_point_center_y > cspace_width){
-						// This means the obstacle point is to the right of the matrix
-						// so we only have to fill up the left part of the sphere
-						if (obstacle_point_center_z < 0){
-							// Obstacle point below matrix
-							// so only fill up upper left half of sphere
-
-							corner_point_z = obstacle_point_center_z + cspace_half_width;
-							corner_point_y = obstacle_point_center_y - cspace_half_width;
-
-							county = 0;
-							for(y_itr = cspace_width-1; y_itr > corner_point_y; y_itr--){
-								for(z_itr = 0; z_itr < corner_point_z; z_itr ++ ){
-									// we also have to iterate over this in x direction.. 
-									countx = 0;
-									for(int x_itr = obstacle_point_center_x ;x_itr < obstacle_point_center_x + cspace_half_width ;x_itr++){
-										if(sphere_model[countx][obstacle_point_center_y- cspace_width +county][-obstacle_point_center_z+z_itr] == 1){
-											if(x_itr < cspace_length) Cspace[x_itr][y_itr][z_itr] = 1;
-											if(obstacle_point_center_x- countx >0) Cspace[obstacle_point_center_x - countx][y_itr][z_itr]=1;
-										}
-									countx++;
-									}
-								}
-								county++;
-							}
-						}
-						else if (obstacle_point_center_z > cspace_width){
-							// Obstacle point above matrix
-							// only fill in bottom left half of sphere
-							corner_point_z = obstacle_point_center_z - cspace_half_width;
-							corner_point_y = obstacle_point_center_y - cspace_half_width;
-							county = 0;
-							for(y_itr = cspace_width-1; y_itr > corner_point_y; y_itr--){
-								countz =0;
-								for(z_itr = cspace_width-1; z_itr > corner_point_z; z_itr-- ){
-									// we also have to iterate over this in x direction.. 
-									countx = 0;
-									for(x_itr = obstacle_point_center_x ;x_itr < obstacle_point_center_x + cspace_half_width ;x_itr++){
-										if(sphere_model[countx][obstacle_point_center_y- cspace_width +county][obstacle_point_center_z-cspace_width+countz] == 1){
-											if(x_itr < cspace_length) Cspace[x_itr][y_itr][z_itr] = 1;
-											if(obstacle_point_center_x- countx >0) Cspace[obstacle_point_center_x- countx][y_itr][z_itr]=1;
-										}
-										countx++;
-									}
-									countz++;
-								}
-								county++;
-							}
-						}
-						else{
-							// fill in the whole left half
-							// Athugum hvort vid seum fyrir ofan eda nedan midju:
-
-							if(obstacle_point_center_z< cspace_half_width ){
-								// this means we are below middle
-								// so we need to continuously check if the lower part of our sphere is out of bounds
-
-								//technically we are dealing with a corner line, but it is a point in the yz plane
-								corner_point_z = obstacle_point_center_z + cspace_half_width;
-								corner_point_y = obstacle_point_center_y - cspace_half_width;
-								county = 0;
-								for(y_itr = cspace_width-1; y_itr > corner_point_y; y_itr--){
-									countz = 0;
-									for(z_itr = obstacle_point_center_z; z_itr < corner_point_z; z_itr ++ ){ 
-										countx = 0;
-										for(x_itr = obstacle_point_center_x ;x_itr < obstacle_point_center_x + cspace_half_width ;x_itr++){
-											if(sphere_model[countx][obstacle_point_center_y- cspace_width +county][countz] == 1){
-												if(x_itr < cspace_length){
-													Cspace[x_itr][y_itr][z_itr] = 1;
-													if(obstacle_point_center_z - countz >= 0) Cspace[x_itr][y_itr][obstacle_point_center_z - countz] = 1;
-												} 
-												if(obstacle_point_center_x- countx >0){
-													Cspace[obstacle_point_center_x- countx][y_itr][z_itr]=1;
-													if(obstacle_point_center_z - countz >= 0){
-														Cspace[obstacle_point_center_x- countx][y_itr][obstacle_point_center_z - countz]=1;
-													}
-												} 
-											}
-											countx++;
-										}
-										countz++;
-									}
-									county++;
-								}
-							}
-							else{
-								// this means we are above middle
-								// so we need to continuously monitor that the upper part of our sphere is not out of bounds
-
-								corner_point_z = obstacle_point_center_z - cspace_half_width;
-								corner_point_y = obstacle_point_center_y - cspace_half_width;
-								county = 0;
-								for(y_itr = cspace_width-1; y_itr > corner_point_y; y_itr--){
-									countz =0;
-									for(z_itr = obstacle_point_center_z; z_itr > corner_point_z; z_itr-- ){
-										// we also have to iterate over this in x direction.. 
-										countx = 0;
-										for(x_itr = obstacle_point_center_x ;x_itr < obstacle_point_center_x + cspace_half_width ;x_itr++){
-											if(sphere_model[countx][obstacle_point_center_y- cspace_width +county][countz] == 1){
-												if(x_itr < cspace_length){ 
-													Cspace[x_itr][y_itr][z_itr] = 1;
-													if(obstacle_point_center_z + countz < cspace_width) Cspace[x_itr][y_itr][obstacle_point_center_z + countz] = 1;
-												}
-												if(obstacle_point_center_x- countx >0){ 
-													Cspace[obstacle_point_center_x- countx][y_itr][z_itr]=1;
-													if(obstacle_point_center_z + countz < cspace_width){
-														Cspace[obstacle_point_center_x- countx][y_itr][obstacle_point_center_z + countz] = 1;
-													} 
-												}											
-											}
-											countx++;
-										}
-										countz++;
-									}
-									county++;
-								}
-							}
-						}
-					}
-					else if (obstacle_point_center_z < 0){
-						// Obstacle point below matrix
-						// fill up whole upper half of sphere
-
-						//well now, this is getting (unnecessary) lenghty, for only a little bit faster program... 
-						// Let's check if we are to the right or left of the center:
-						if(obstacle_point_center_y< cspace_half_width){
-							// this means we are left of center, below matrix
-							// need to monitor that left part of sphere does not go out of bounds
-
-							corner_point_z = obstacle_point_center_z + cspace_half_width;
-							corner_point_y = obstacle_point_center_y + cspace_half_width;
-
-							county = 0;
-							for(y_itr = obstacle_point_center_y; y_itr < corner_point_y; y_itr++){
-								for(z_itr = 0; z_itr < corner_point_z; z_itr ++ ){ 
-									countx = 0;
-									for(x_itr = obstacle_point_center_x ;x_itr < obstacle_point_center_x + cspace_half_width ;x_itr++){
-										if(sphere_model[countx][county][-obstacle_point_center_z+z_itr] == 1){
-											if(x_itr < cspace_length){
-												Cspace[x_itr][y_itr][z_itr] = 1;
-												if(obstacle_point_center_y - county >= 0) Cspace[x_itr][obstacle_point_center_y - county][z_itr] = 1;
-											} 
-											if(obstacle_point_center_x- countx >0){
-												Cspace[obstacle_point_center_x- countx][y_itr][z_itr]=1;
-												if(obstacle_point_center_y - county >= 0){
-													Cspace[obstacle_point_center_x- countx][obstacle_point_center_y - county][z_itr]=1;
-												}
-											} 
-										}
-										countx++;
-									}
-								}
-								county++;
-							}
-						}
-						else{
-							// this means we are right of center, below matrix
-							// need to monitor that right part of sphere does not go out of bounds
-
-							corner_point_z = obstacle_point_center_z + cspace_half_width;
-							corner_point_y = obstacle_point_center_y - cspace_half_width;
-
-							county = 0;
-							for(y_itr = obstacle_point_center_y; y_itr > corner_point_y; y_itr--){
-								for(z_itr = 0; z_itr < corner_point_z; z_itr ++){ 
-									countx = 0;
-									for(x_itr = obstacle_point_center_x; x_itr < obstacle_point_center_x + cspace_half_width ;x_itr++){
-										if(sphere_model[countx][county][-obstacle_point_center_z+z_itr] == 1){
-											if(x_itr < cspace_length){
-												Cspace[x_itr][y_itr][z_itr] = 1;
-												if(obstacle_point_center_y + county < cspace_width) Cspace[x_itr][obstacle_point_center_y + county][z_itr] = 1;
-											} 
-											if(obstacle_point_center_x- countx >0){
-												Cspace[obstacle_point_center_x- countx][y_itr][z_itr]=1;
-												if(obstacle_point_center_y + county < cspace_width){
-													Cspace[obstacle_point_center_x- countx][obstacle_point_center_y + county][z_itr]=1;
-												}
-											} 
-										}
-										countx++;
-									}
-								}
-								county++;
-							}
-						}
-					}
-					else if (obstacle_point_center_z > cspace_width){
-						// Obstacle point above matrix
-						// fill whole bottom half of sphere
-
-						//ugh, let's check if we are to right or left of middle point.. 
-						if(obstacle_point_center_y< cspace_half_width){
-							// this means we are left of center
-							// need to monitor that left part of sphere does not go out of bounds
-							corner_point_z = obstacle_point_center_z - cspace_half_width;
-							corner_point_y = obstacle_point_center_y + cspace_half_width;
-
-							county = 0;
-							for(y_itr = obstacle_point_center_y; y_itr < corner_point_y; y_itr++){
-								countz = 0;
-								for(z_itr = cspace_width-1; z_itr > corner_point_z; z_itr -- ){ 
-									countx = 0;
-									for(x_itr = obstacle_point_center_x ;x_itr < obstacle_point_center_x + cspace_half_width ;x_itr++){
-										if(sphere_model[countx][county][countz] == 1){
-											if(x_itr < cspace_length){
-												Cspace[x_itr][y_itr][z_itr] = 1;
-												if(obstacle_point_center_y - county >= 0) Cspace[x_itr][obstacle_point_center_y - county][z_itr] = 1;
-											} 
-											if(obstacle_point_center_x- countx >0){
-												Cspace[obstacle_point_center_x- countx][y_itr][z_itr]=1;
-												if(obstacle_point_center_y - county >= 0){
-													Cspace[obstacle_point_center_x- countx][obstacle_point_center_y - county][z_itr]=1;
-												}
-											} 
-										}
-										countx++;
-									}
-									countz++;
-								}
-								county++;
-							}
-						}
-						else{
-							// this means we are right of center
-							// need to monitor that right part of sphere does not go out of bounds
-
-							corner_point_z = obstacle_point_center_z - cspace_half_width;
-							corner_point_y = obstacle_point_center_y - cspace_half_width;
-
-							county = 0;
-							for(y_itr = obstacle_point_center_y; y_itr > corner_point_y; y_itr--){
-								countz = 0;
-								for(z_itr = cspace_width-1; z_itr > corner_point_z; z_itr--){ 
-									countx = 0;
-									for(x_itr = obstacle_point_center_x; x_itr < obstacle_point_center_x + cspace_half_width ;x_itr++){
-										if(sphere_model[countx][county][countz] == 1){
-											if(x_itr < cspace_length){
-												Cspace[x_itr][y_itr][z_itr] = 1;
-												if(obstacle_point_center_y + county < cspace_width) Cspace[x_itr][obstacle_point_center_y + county][z_itr] = 1;
-											} 
-											if(obstacle_point_center_x- countx >0){
-												Cspace[obstacle_point_center_x- countx][y_itr][z_itr]=1;
-												if(obstacle_point_center_y + county < cspace_width){
-													Cspace[obstacle_point_center_x- countx][obstacle_point_center_y + county][z_itr]=1;
-												}
-											} 
-										}
-										countx++;
-									}
-									countz++;
-								}
-								county++;
-							}
-						}
-
-					}
-					else{
-						// Fill in the whole sphere
-
-						// gerum bara einfaldan koda fyrir thetta til ad byrja med, er ordinn ansi threyttur a thessu...
-
-						for(county = 0; county< cspace_half_width ; county ++){
-                            for(countz = 0; countz< cspace_half_width ; countz ++){
-								for(countx = 0; countx< cspace_half_width ; countx ++){
-									if(sphere_model[countx][county][countz] == 1){
-
-										if(obstacle_point_center_x+countx<cspace_length){
-											if(obstacle_point_center_y+county<cspace_width){
-												if(obstacle_point_center_z+countz<cspace_width){
-													Cspace[obstacle_point_center_x+countx][obstacle_point_center_y+county][obstacle_point_center_z+countz] =1;
-												}
-												if(obstacle_point_center_z-countz >=0){
-													Cspace[obstacle_point_center_x+countx][obstacle_point_center_y+county][obstacle_point_center_z-countz] =1;
-												}
-											}
-											if(obstacle_point_center_y-county >=0){
-												if(obstacle_point_center_z+countz<cspace_width){
-													Cspace[obstacle_point_center_x+countx][obstacle_point_center_y-county][obstacle_point_center_z+countz] =1;
-												}
-												if(obstacle_point_center_z-countz >=0){
-													Cspace[obstacle_point_center_x+countx][obstacle_point_center_y-county][obstacle_point_center_z-countz] =1;
-												}
-											}
-
-										}
-										if(obstacle_point_center_x- countx>0){
-											if(obstacle_point_center_y+county<cspace_width){
-												if(obstacle_point_center_z+countz<cspace_width){
-													Cspace[obstacle_point_center_x-countx][obstacle_point_center_y+county][obstacle_point_center_z+countz] =1;
-												}
-												if(obstacle_point_center_z-countz >=0){
-													Cspace[obstacle_point_center_x-countx][obstacle_point_center_y+county][obstacle_point_center_z-countz] =1;
-												}
-											}
-											if(obstacle_point_center_y-county >=0){
-												if(obstacle_point_center_z+countz<cspace_width){
-													Cspace[obstacle_point_center_x-countx][obstacle_point_center_y-county][obstacle_point_center_z+countz] =1;
-												}
-												if(obstacle_point_center_z-countz >=0){
-													Cspace[obstacle_point_center_x-countx][obstacle_point_center_y-county][obstacle_point_center_z-countz] =1;
-												}
-											}
-										}
-									}
-								}
-							}
-						}
-					} //her endar thessi langa ef setning 
-				} 
-
-			}// her 
-		}
-	}// her endar itrunin yfir myndavela punktana...*/
-
-
-
-
-/*
-void MotionComputation::addObstacleSphere(int obstacle_point_center_x, int obstacle_point_center_y, int obstacle_point_center_z, int cspace_length){
-	int corner_point_y, corner_point_z;
-
-	if(obstacle_point_center_y < 0){
-		// This means the center is to the left of the matrix
-		// so we only have to fill up the right part of the sphere
-		if (obstacle_point_center_z < 0){
-			// Obstacle point below matrix
-			// so only fill up upper right half of sphere
-
-			// Perhaps we can just iterate over the values that are inside the obstacle matrix... 
-			// So the point we want to get to is:
-
-			//technically we are dealing with a corner line, but it is a point in the yz plane
-			corner_point_z = obstacle_point_center_z + cspace_half_width;
-			corner_point_y = obstacle_point_center_y + cspace_half_width;
-
-			// I guess we also have to check if the sphere goes out of bounds on either side length wise 
-
-			//we can then iterate from the bottom left half of the matrix... 		
-			/*
-			Ah ya know, fuck this, let's just have an if statement that checks every time for now.. 
-			if(obstacle_point_center_x - cspace_half_width< 0){
-				// now we have to watch out so we don't get out of bounds :>P
-				for(int y_itr = 0; y_itr < corner_point_y; y_itr++){
-					for(int z_itr = 0; z_itr < corner_point_z; z_itr ++ ){
-						// we also have to iterate over this in x direction.. 
-						count = 0;
-						for(int x_itr = obstacle_point_center_x; x_itr < obstacle_point_center_x + cspace_half_width ; x_itr++){
-							if(sphere_model[count][-obstacle_point_center_y+y_itr][-obstacle_point_center_z+z_itr] == 1){
-								Cspace[x_itr][y_itr][z_itr] = 1;
-								if(obstacle_point_center_x- count >=0){
-									Cspace[obstacle_point_center_x- count][y_itr][z_itr]=1;
-								}
-							}
-						count++;
-						}
-					}
-				}
-			}
-			*/ /*
-			for(int y_itr = 0; y_itr < corner_point_y; y_itr++){
-				for(int z_itr = 0; z_itr < corner_point_z; z_itr ++ ){
-					// we also have to iterate over this in x direction.. 
-					countx = 0;
-					for(int x_itr = obstacle_point_center_x ;x_itr < obstacle_point_center_x + cspace_half_width ;x_itr++){
-						if(sphere_model[countx][-obstacle_point_center_y+y_itr][-obstacle_point_center_z+z_itr] == 1){
-							if(x_itr < cspace_length) Cspace[x_itr][y_itr][z_itr] = 1;
-							if(obstacle_point_center_x- countx >0) Cspace[obstacle_point_center_x- countx][y_itr][z_itr]=1;
-						}
-					countx++;
-					}
-				}
-			}
-		}
-		else if (obstacle_point_center_z > cspace_width){
-			// Obstacle point above matrix
-			// only fill in bottom right half of sphere
-
-			// Perhaps we can just iterate over the values that are inside the obstacle matrix... 
-			// So the point we want to get to is:
-
-			corner_point_z = obstacle_point_center_z - cspace_half_width;
-			corner_point_y = obstacle_point_center_y + cspace_half_width;
-
-			for(int y_itr = 0; y_itr < corner_point_y; y_itr++){
-				countz =0;
-				for(int z_itr = cspace_width-1; z_itr > corner_point_z; z_itr-- ){
-					// we also have to iterate over this in x direction.. 
-					countx = 0;
-					for(int x_itr = obstacle_point_center_x ;x_itr < obstacle_point_center_x + cspace_half_width ;x_itr++){
-						if(sphere_model[countx][-obstacle_point_center_y+y_itr][obstacle_point_center_z-cspace_width+countz] == 1){
-							if(x_itr < cspace_length) Cspace[x_itr][y_itr][z_itr] = 1;
-							if(obstacle_point_center_x- countx >0) Cspace[obstacle_point_center_x- countx][y_itr][z_itr]=1;
-						}
-					countx++;
-					}
-				countz++;
-				}
-			}
-		}
-		else{
-			// fill in the whole right half 
-			// Athugum hvort vid seum fyrir ofan eda nedan midju:
-
-			if(obstacle_point_center_z< cspace_half_width){
-				// this means we are below middle
-				// so we need to continuously check if the lower part of our sphere is out of bounds
-
-				//technically we are dealing with a corner line, but it is a point in the yz plane
-				corner_point_z = obstacle_point_center_z + cspace_half_width;
-				corner_point_y = obstacle_point_center_y + cspace_half_width;
-
-				for(int y_itr = 0; y_itr < corner_point_y; y_itr++){
-					countz = 0;
-					for(int z_itr = obstacle_point_center_z; z_itr < corner_point_z; z_itr ++ ){ 
-						countx = 0;
-						for(int x_itr = obstacle_point_center_x ;x_itr < obstacle_point_center_x + cspace_half_width ;x_itr++){
-							if(sphere_model[countx][-obstacle_point_center_y+y_itr][countz] == 1){
-								if(x_itr < cspace_length){
-									Cspace[x_itr][y_itr][z_itr] = 1;
-									if(obstacle_point_center_z - countz >= 0) Cspace[x_itr][y_itr][obstacle_point_center_z - countz] = 1;
-								} 
-								if(obstacle_point_center_x- countx >0){
-									Cspace[obstacle_point_center_x- countx][y_itr][z_itr]=1;
-									if(obstacle_point_center_z - countz >= 0){
-										Cspace[obstacle_point_center_x- countx][y_itr][obstacle_point_center_z - countz]=1;
-									}
-								} 
-							}
-							countx++;
-						}
-						countz++;
-					}
-				}
-			}
-			else{
-				// this means we are above middle
-				// so we need to continuously monitor that the upper part of our sphere is not out of bounds
-
-				corner_point_z = obstacle_point_center_z - cspace_half_width;
-				corner_point_y = obstacle_point_center_y + cspace_half_width;
-
-				for(int y_itr = 0; y_itr < corner_point_y; y_itr++){
-					countz =0;
-					for(int z_itr = obstacle_point_center_z; z_itr > corner_point_z; z_itr-- ){
-						// we also have to iterate over this in x direction.. 
-						countx = 0;
-						for(int x_itr = obstacle_point_center_x ;x_itr < obstacle_point_center_x + cspace_half_width ;x_itr++){
-							if(sphere_model[countx][-obstacle_point_center_y+y_itr][countz] == 1){
-								if(x_itr < cspace_length){ 
-									Cspace[x_itr][y_itr][z_itr] = 1;
-									if(obstacle_point_center_z + countz < cspace_width) Cspace[x_itr][y_itr][obstacle_point_center_z + countz] = 1;
-								}
-								if(obstacle_point_center_x- countx >0){ 
-									Cspace[obstacle_point_center_x- countx][y_itr][z_itr]=1;
-									if(obstacle_point_center_z + countz < cspace_width){
-										Cspace[obstacle_point_center_x- countx][y_itr][obstacle_point_center_z + countz] = 1;
-									} 
-								}											
-							}
-						countx++;
-						}
-					countz++;
-					}
-				}
-			}
-		}
-	}
-	else if (obstacle_point_center_y > cspace_width){
-		// This means the obstacle point is to the right of the matrix
-		// so we only have to fill up the left part of the sphere
-		if (obstacle_point_center_z < 0){
-			// Obstacle point below matrix
-			// so only fill up upper left half of sphere
-
-			corner_point_z = obstacle_point_center_z + cspace_half_width;
-			corner_point_y = obstacle_point_center_y - cspace_half_width;
-
-			county = 0;
-			for(int y_itr = cspace_width-1; y_itr > corner_point_y; y_itr--){
-				for(int z_itr = 0; z_itr < corner_point_z; z_itr ++ ){
-					// we also have to iterate over this in x direction.. 
-					countx = 0;
-					for(int x_itr = obstacle_point_center_x ;x_itr < obstacle_point_center_x + cspace_half_width ;x_itr++){
-						if(sphere_model[countx][obstacle_point_center_y- cspace_width +county][-obstacle_point_center_z+z_itr] == 1){
-							if(x_itr < cspace_length) Cspace[x_itr][y_itr][z_itr] = 1;
-							if(obstacle_point_center_x- countx >0) Cspace[obstacle_point_center_x - countx][y_itr][z_itr]=1;
-						}
-					countx++;
-					}
-				}
-				county++;
-			}
-		}
-		else if (obstacle_point_center_z > cspace_width){
-			// Obstacle point above matrix
-			// only fill in bottom left half of sphere
-			corner_point_z = obstacle_point_center_z - cspace_half_width;
-			corner_point_y = obstacle_point_center_y - cspace_half_width;
-			county = 0;
-			for(int y_itr = cspace_width-1; y_itr > corner_point_y; y_itr--){
-				countz =0;
-				for(int z_itr = cspace_width-1; z_itr > corner_point_z; z_itr-- ){
-					// we also have to iterate over this in x direction.. 
-					countx = 0;
-					for(int x_itr = obstacle_point_center_x ;x_itr < obstacle_point_center_x + cspace_half_width ;x_itr++){
-						if(sphere_model[countx][obstacle_point_center_y- cspace_width +county][obstacle_point_center_z-cspace_width+countz] == 1){
-							if(x_itr < cspace_length) Cspace[x_itr][y_itr][z_itr] = 1;
-							if(obstacle_point_center_x- countx >0) Cspace[obstacle_point_center_x- countx][y_itr][z_itr]=1;
-						}
-						countx++;
-					}
-					countz++;
-				}
-				county++;
-			}
-		}
-		else{
-			// fill in the whole left half
-			// Athugum hvort vid seum fyrir ofan eda nedan midju:
-
-			if(obstacle_point_center_z< cspace_half_width ){
-				// this means we are below middle
-				// so we need to continuously check if the lower part of our sphere is out of bounds
-
-				//technically we are dealing with a corner line, but it is a point in the yz plane
-				corner_point_z = obstacle_point_center_z + cspace_half_width;
-				corner_point_y = obstacle_point_center_y - cspace_half_width;
-				county = 0;
-				for(int y_itr = cspace_width-1; y_itr > corner_point_y; y_itr--){
-					countz = 0;
-					for(int z_itr = obstacle_point_center_z; z_itr < corner_point_z; z_itr ++ ){ 
-						countx = 0;
-						for(int x_itr = obstacle_point_center_x ;x_itr < obstacle_point_center_x + cspace_half_width ;x_itr++){
-							if(sphere_model[countx][obstacle_point_center_y- cspace_width +county][countz] == 1){
-								if(x_itr < cspace_length){
-									Cspace[x_itr][y_itr][z_itr] = 1;
-									if(obstacle_point_center_z - countz >= 0) Cspace[x_itr][y_itr][obstacle_point_center_z - countz] = 1;
-								} 
-								if(obstacle_point_center_x- countx >0){
-									Cspace[obstacle_point_center_x- countx][y_itr][z_itr]=1;
-									if(obstacle_point_center_z - countz >= 0){
-										Cspace[obstacle_point_center_x- countx][y_itr][obstacle_point_center_z - countz]=1;
-									}
-								} 
-							}
-							countx++;
-						}
-						countz++;
-					}
-					county++;
-				}
-			}
-			else{
-				// this means we are above middle
-				// so we need to continuously monitor that the upper part of our sphere is not out of bounds
-
-				corner_point_z = obstacle_point_center_z - cspace_half_width;
-				corner_point_y = obstacle_point_center_y - cspace_half_width;
-				county = 0;
-				for(int y_itr = cspace_width-1; y_itr > corner_point_y; y_itr--){
-					countz =0;
-					for(int z_itr = obstacle_point_center_z; z_itr > corner_point_z; z_itr-- ){
-						// we also have to iterate over this in x direction.. 
-						countx = 0;
-						for(int x_itr = obstacle_point_center_x ;x_itr < obstacle_point_center_x + cspace_half_width ;x_itr++){
-							if(sphere_model[countx][obstacle_point_center_y- cspace_width +county][countz] == 1){
-								if(x_itr < cspace_length){ 
-									Cspace[x_itr][y_itr][z_itr] = 1;
-									if(obstacle_point_center_z + countz < cspace_width) Cspace[x_itr][y_itr][obstacle_point_center_z + countz] = 1;
-								}
-								if(obstacle_point_center_x- countx >0){ 
-									Cspace[obstacle_point_center_x- countx][y_itr][z_itr]=1;
-									if(obstacle_point_center_z + countz < cspace_width){
-										Cspace[obstacle_point_center_x- countx][y_itr][obstacle_point_center_z + countz] = 1;
-									} 
-								}											
-							}
-							countx++;
-						}
-						countz++;
-					}
-					county++;
-				}
-			}
-		}
-	}
-	else if (obstacle_point_center_z < 0){
-		// Obstacle point below matrix
-		// fill up whole upper half of sphere
-
-		//well now, this is getting (unnecessary) lenghty, for only a little bit faster program... 
-		// Let's check if we are to the right or left of the center:
-		if(obstacle_point_center_y< cspace_half_width){
-			// this means we are left of center, below matrix
-			// need to monitor that left part of sphere does not go out of bounds
-
-			corner_point_z = obstacle_point_center_z + cspace_half_width;
-			corner_point_y = obstacle_point_center_y + cspace_half_width;
-
-			county = 0;
-			for(int y_itr = obstacle_point_center_y; y_itr < corner_point_y; y_itr++){
-				for(int z_itr = 0; z_itr < corner_point_z; z_itr ++ ){ 
-					countx = 0;
-					for(int x_itr = obstacle_point_center_x ;x_itr < obstacle_point_center_x + cspace_half_width ;x_itr++){
-						if(sphere_model[countx][county][-obstacle_point_center_z+z_itr] == 1){
-							if(x_itr < cspace_length){
-								Cspace[x_itr][y_itr][z_itr] = 1;
-								if(obstacle_point_center_y - county >= 0) Cspace[x_itr][obstacle_point_center_y - county][z_itr] = 1;
-							} 
-							if(obstacle_point_center_x- countx >0){
-								Cspace[obstacle_point_center_x- countx][y_itr][z_itr]=1;
-								if(obstacle_point_center_y - county >= 0){
-									Cspace[obstacle_point_center_x- countx][obstacle_point_center_y - county][z_itr]=1;
-								}
-							} 
-						}
-						countx++;
-					}
-				}
-				county++;
-			}
-		}
-		else{
-			// this means we are right of center, below matrix
-			// need to monitor that right part of sphere does not go out of bounds
-
-			corner_point_z = obstacle_point_center_z + cspace_half_width;
-			corner_point_y = obstacle_point_center_y - cspace_half_width;
-
-			county = 0;
-			for(int y_itr = obstacle_point_center_y; y_itr > corner_point_y; y_itr--){
-				for(int z_itr = 0; z_itr < corner_point_z; z_itr ++){ 
-					countx = 0;
-					for(int x_itr = obstacle_point_center_x; x_itr < obstacle_point_center_x + cspace_half_width ;x_itr++){
-						if(sphere_model[countx][county][-obstacle_point_center_z+z_itr] == 1){
-							if(x_itr < cspace_length){
-								Cspace[x_itr][y_itr][z_itr] = 1;
-								if(obstacle_point_center_y + county < cspace_width) Cspace[x_itr][obstacle_point_center_y + county][z_itr] = 1;
-							} 
-							if(obstacle_point_center_x- countx >0){
-								Cspace[obstacle_point_center_x- countx][y_itr][z_itr]=1;
-								if(obstacle_point_center_y + county < cspace_width){
-									Cspace[obstacle_point_center_x- countx][obstacle_point_center_y + county][z_itr]=1;
-								}
-							} 
-						}
-						countx++;
-					}
-				}
-				county++;
-			}
-		}
-	}
-	else if (obstacle_point_center_z > cspace_width){
-		// Obstacle point above matrix
-		// fill whole bottom half of sphere
-
-		//ugh, let's check if we are to right or left of middle point.. 
-		if(obstacle_point_center_y< cspace_half_width){
-			// this means we are left of center
-			// need to monitor that left part of sphere does not go out of bounds
-			corner_point_z = obstacle_point_center_z - cspace_half_width;
-			corner_point_y = obstacle_point_center_y + cspace_half_width;
-
-			county = 0;
-			for(int y_itr = obstacle_point_center_y; y_itr < corner_point_y; y_itr++){
-				countz = 0;
-				for(int z_itr = cspace_width-1; z_itr > corner_point_z; z_itr -- ){ 
-					countx = 0;
-					for(int x_itr = obstacle_point_center_x ;x_itr < obstacle_point_center_x + cspace_half_width ;x_itr++){
-						if(sphere_model[countx][county][countz] == 1){
-							if(x_itr < cspace_length){
-								Cspace[x_itr][y_itr][z_itr] = 1;
-								if(obstacle_point_center_y - county >= 0) Cspace[x_itr][obstacle_point_center_y - county][z_itr] = 1;
-							} 
-							if(obstacle_point_center_x- countx >0){
-								Cspace[obstacle_point_center_x- countx][y_itr][z_itr]=1;
-								if(obstacle_point_center_y - county >= 0){
-									Cspace[obstacle_point_center_x- countx][obstacle_point_center_y - county][z_itr]=1;
-								}
-							} 
-						}
-						countx++;
-					}
-					countz++;
-				}
-				county++;
-			}
-		}
-		else{
-			// this means we are right of center
-			// need to monitor that right part of sphere does not go out of bounds
-
-			corner_point_z = obstacle_point_center_z - cspace_half_width;
-			corner_point_y = obstacle_point_center_y - cspace_half_width;
-
-			county = 0;
-			for(int y_itr = obstacle_point_center_y; y_itr > corner_point_y; y_itr--){
-				countz = 0;
-				for(int z_itr = cspace_width-1; z_itr > corner_point_z; z_itr--){ 
-					countx = 0;
-					for(int x_itr = obstacle_point_center_x; x_itr < obstacle_point_center_x + cspace_half_width ;x_itr++){
-						if(sphere_model[countx][county][countz] == 1){
-							if(x_itr < cspace_length){
-								Cspace[x_itr][y_itr][z_itr] = 1;
-								if(obstacle_point_center_y + county < cspace_width) Cspace[x_itr][obstacle_point_center_y + county][z_itr] = 1;
-							} 
-							if(obstacle_point_center_x- countx >0){
-								Cspace[obstacle_point_center_x- countx][y_itr][z_itr]=1;
-								if(obstacle_point_center_y + county < cspace_width){
-									Cspace[obstacle_point_center_x- countx][obstacle_point_center_y + county][z_itr]=1;
-								}
-							} 
-						}
-						countx++;
-					}
-					countz++;
-				}
-				county++;
-			}
-		}
-
-
-	}
-	else{
-		// Fill in the whole sphere
-
-		// gerum bara einfaldan koda fyrir thetta til ad byrja med, er ordinn ansi threyttur a thessu...
-
-		for(county = 0; county< cspace_half_width ; county ++){
-			for(county = 0; county< cspace_half_width ; county ++){
-				for(countx = 0; countx< cspace_half_width ; countx ++){
-					if(sphere_model[countx][county][countz] == 1){
-
-						if(obstacle_point_center_x+countx<cspace_length){
-							if(obstacle_point_center_y+county<cspace_width){
-								if(obstacle_point_center_z+countz<cspace_width){
-									Cspace[obstacle_point_center_x+countx][obstacle_point_center_y+county][obstacle_point_center_z+countz] =1;
-								}
-								if(obstacle_point_center_z-countz >=0){
-									Cspace[obstacle_point_center_x+countx][obstacle_point_center_y+county][obstacle_point_center_z-countz] =1;
-								}
-							}
-							if(obstacle_point_center_y-county >=0){
-								if(obstacle_point_center_z+countz<cspace_width){
-									Cspace[obstacle_point_center_x+countx][obstacle_point_center_y-county][obstacle_point_center_z+countz] =1;
-								}
-								if(obstacle_point_center_z-countz >=0){
-									Cspace[obstacle_point_center_x+countx][obstacle_point_center_y-county][obstacle_point_center_z-countz] =1;
-								}
-							}
-
-						}
-						if(obstacle_point_center_x- countx>0){
-							if(obstacle_point_center_y+county<cspace_width){
-								if(obstacle_point_center_z+countz<cspace_width){
-									Cspace[obstacle_point_center_x-countx][obstacle_point_center_y+county][obstacle_point_center_z+countz] =1;
-								}
-								if(obstacle_point_center_z-countz >=0){
-									Cspace[obstacle_point_center_x-countx][obstacle_point_center_y+county][obstacle_point_center_z-countz] =1;
-								}
-							}
-							if(obstacle_point_center_y-county >=0){
-								if(obstacle_point_center_z+countz<cspace_width){
-									Cspace[obstacle_point_center_x-countx][obstacle_point_center_y-county][obstacle_point_center_z+countz] =1;
-								}
-								if(obstacle_point_center_z-countz >=0){
-									Cspace[obstacle_point_center_x-countx][obstacle_point_center_y-county][obstacle_point_center_z-countz] =1;
-								}
-							}
-
-						}
-
-
-					}
-				}
-			}
-		}
-	} //her endar thessi langa ef setning 
-
-}
-
-
-
-
-
-
-	// --------------------------The following is a part of implementation of ORM found to have logical errors ------------
-	// ----------------------------------------So it will probably not be used---------------------------------------------
-	/*
-
-	// now let's see what points within this cylinder are within distance of the diameter of the robot from one another...
-	// for this purpose we can make a matrix NxN where N is the number of points that are within the cylinder...
-
-	if(points_within_matr.empty()){
-		cout << "number of points: " << 0 <<  endl;
-		return true;
-
-	} 
-	else{
-		cout << "number of points: " << points_within_matr.size() << endl;
-		int number_of_points = points_within_matr.size();
-		int clusters [number_of_points][number_of_points] = {0};
-
-		for(int i = 0; i< number_of_points; i++){
-			for (int j = 0; j< number_of_points; j++){
-				if(pow((points_within_matr[0][i]-points_within_matr[0][j]),2)+pow((points_within_matr[1][i]-points_within_matr[1][j]),2)
-					+pow((points_within_matr[2][i]-points_within_matr[2][j]),2) < diameter_sq){
-					clusters[i][j]=1;
-					clusters[j][i] = 1;
-				}
-			}
-		}
-		//now, maybe it's best to find which clusters are subsets of other clusters, since those will not be needed in further steps
-		//a method for that could be like:
-
-		// if line1 [i] = line2 [i] then same, keep going
-		// if line1 [i] != line2 [i] then:
-		//		if line1 = 1
-		//				line 2 possibly subset of 1
-		//		else
-		//				line 1 possibly subset of line 2
-		// both can not apply 
-
-		bool jini, iinj;
-
-		//let's just make an array equal to number of points and where we have 0 is the lines we wanna use
-		int lines_not_to_use [number_of_points] = {0};
-
-		//iterate over all lines but last one
-		for (int i = 0; i< number_of_points-1; i++){
-
-			//iterate over all following lines to compare with 
-			for (int j = i+1; j < number_of_points; j++){
-
-				jini=false;
-				iinj=false;
-				//iterate over same element of both lines
-				for(int l = 0; l<number_of_points; l++){
-					if(clusters[i][l] != clusters[j][l]){
-						if(clusters[i][l] == 1){
-							//line 2 possibly subset of 1
-							if(iinj == true){
-								//now neither is subset of the other..
-								break;
-							}
-							jini = true;
-						}
-						else{
-							//line 1 possibly subset of line 2
-							if(jini == true){
-								//now neither is subset of the other..
-								break;
-							}
-							iinj = true;
-						}
-					}
-				}
-				if(jini != iinj){
-					//this means one line is subset of other
-					if(jini == true){
-						// line j subset of line i
-						lines_not_to_use[j] = 1;
-					}
-					else{
-						// line i subset of line j
-						lines_not_to_use[i] = 1;
-					}
-				}
-				else{
-					if(jini == false){
-						// Both are false so the lines are identical, just use one of them..
-						lines_not_to_use[j] = 1;
-					}
-				}
-			}
-		}
-
-
-
-
-	return true;
-	}
-
-	*/
-
-  	/*
-  	//Let's try using the Cspace matrix as reachable points matrix
-  	int back_edge =0, front_edge = 0, next_back_edge = 0;
-
-  	//initialize matrices:
-  	for (int y_itr = 0; y_itr < cspace_width; y_itr++){
-  		for (int z_itr=y_itr; z_itr<cspace_width; z_itr++){
-  			if(Cspaceframe[y_itr][z_itr] == 0){
-  				edge_points[0][y_itr][z_itr] = 1;
-  				edge_points[0][z_itr][y_itr] = 1;
-  				Cspace[0][y_itr][z_itr] = 2;
-  				Cspace[0][z_itr][y_itr] = 2;
-  				/*reachable_points[0][y_itr][z_itr] = 1;
-  				reachable_points[0][z_itr][y_itr] = 1;*/
-  	/*
-  			}
-  		}
-  	}
-
-  	// Now 0 in Cspace means it is free, 1 means it is occupied,  2 means it is reachable...
-
-
-/*  	bool backedgeinit = true; //true when we have not initialized yet. 
-  	// the idea now is to always iterate through the back edge... maybe not fastest, but whatever..
-  	for(int x_itr = back_edge; x_itr<=front_edge; x_itr++){
-	  	for (int y_itr = 0; y_itr < cspace_width; y_itr++){
-	  		for (int z_itr=y_itr; z_itr<cspace_width; z_itr++){
-	  			// check if point is in edge points:
-	  			if(edge_points[x_itr][y_itr][z_itr] == 1){
-	  				// mark all surrounding points that are free as edge points 
-	  				if(Cspace[x_itr+1][y_itr][z_itr] == 0){
-	  					Cspace[x_itr+1][y_itr][z_itr] == 2;
-	  					edge_points[x_itr+1][y_itr][z_itr] = 1;
-	  					if(backedgeinit == true || back_edge > x_itr + 1) back_edge = x_itr + 1;
-	  					if(front_edge < x_itr +1) front_edge = x_itr+1;
-	  				}
-	  				if(Cspace[x_itr][y_itr+1][z_itr] == 0){
-	  					Cspace[x_itr][y_itr+1][z_itr] == 2;
-	  					edge_points[x_itr][y_itr+1][z_itr] = 1;
-	  					if(backedgeinit == true || back_edge > x_itr ) back_edge = x_itr;
-	  					if(front_edge < x_itr) front_edge = x_itr;
-	  				}
-	  				if(Cspace[x_itr][y_itr-1][z_itr] == 0){
-	  					Cspace[x_itr][y_itr-1][z_itr] == 2;
-	  					edge_points[x_itr][y_itr-1][z_itr] = 1;
-	  					if(backedgeinit == true || back_edge > x_itr ) back_edge = x_itr;
-	  					if(front_edge < x_itr) front_edge = x_itr;
-	  				}
-	  				if(Cspace[x_itr][y_itr][z_itr+1] == 0){
-	  					Cspace[x_itr][y_itr][z_itr+1] == 2;
-	  					edge_points[x_itr][y_itr][z_itr+1] = 1;
-	  					if(backedgeinit == true || back_edge > x_itr ) back_edge = x_itr;
-	  					if(front_edge < x_itr) front_edge = x_itr;
-	  				}
-	  				if(Cspace[x_itr][y_itr][z_itr-1] == 0){
-	  					Cspace[x_itr][y_itr][z_itr-1] == 2;
-	  					edge_points[x_itr][y_itr][z_itr-1] = 1;
-	  					if(backedgeinit == true || back_edge > x_itr ) back_edge = x_itr;
-	  					if(front_edge < x_itr) front_edge = x_itr;
-	  				}
-	  				// unmark this point as edge point
-	  				edge_points[x_itr][y_itr][z_itr] = 0;
-	  				// check if next points should be marked as front edge (or back edge...)
-	  			}
-	  		}
-	  	}
-  	}
-*/

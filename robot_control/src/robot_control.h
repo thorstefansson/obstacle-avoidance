@@ -65,6 +65,8 @@ private:
     ros::Subscriber sonar_limits_and_ranges_sub_;
     ros::Subscriber occupancy_matrix_sub_;
     ros::Subscriber u_sol_sub_;
+    ros::Subscriber goal_position_sub_;
+
     //ros::Subscriber u_targ_sub_
 
     //ros::Subscriber camera_subscriber_;
@@ -85,7 +87,7 @@ private:
     geometry_msgs::Vector3 robot_position;
     geometry_msgs::Vector3 direction_vector;*/
 
-    Vector3d direction_vector, robot_position, subgoal_vector, u_sol, fixed_position;
+    Vector3d direction_vector, robot_position, subgoal_vector, u_sol, fixed_position, target_position, u_sol_global, goal_position;
 
     //float goal_position[3], robot_position[3], direction_vector[3];
 
@@ -112,6 +114,7 @@ private:
     double z_turn, w_turn, xy_length_of_direction_vector, xy_length_of_u_sol;
 
     geometry_msgs::PoseStamped set_pose;
+    geometry_msgs::TwistStamped set_velocity;
 
     int spherical_matrix_height, spherical_matrix_width;
     int M,N, spherical_matrix_degree_resolution, m, n;
@@ -136,10 +139,12 @@ private:
     
     //void subscriberCallback(const std_msgs::Float32& message_holder); //prototype for callback of example subscriber   !!!!!!!!!!!!!!!!! 
 
-    void directionVectorCallback(const geometry_msgs::Vector3ConstPtr& input);
+    //void directionVectorCallback(const geometry_msgs::Vector3ConstPtr& input);
     void robotPositionCallback(const geometry_msgs::PoseStampedConstPtr& input);
     void sphericalMatrixCallback(const std_msgs::Float32MultiArray::ConstPtr& matrix_msg);
     void usolCallback(const geometry_msgs::Vector3ConstPtr& input);
+    void goalPositionCallback(const geometry_msgs::Vector3ConstPtr& input);
+    float vectorlength(const Vector3d & vec);
     //void utargCallback(const geometry_msgs::Vector3ConstPtr& input);
     //void sonarlimitsrangesCallback(const std_msgs::Int16MultiArray::ConstPtr& input);
     Vector3d cross(const Vector3d & vec1, const Vector3d & vec2);

@@ -77,8 +77,8 @@ void RobotControl::initializeSubscribers()
 
     occupancy_matrix_sub_ = nh_.subscribe("/spherical_matrix", 1, &RobotControl::sphericalMatrixCallback, this);
 
-    //goal_position_sub_ = nh_.subscribe("/goal_position", 1, &RobotControl::goalPositionCallback, this);
-    direction_vector_sub_ = nh_.subscribe("/target_position", 1, &RobotControl::directionVectorCallback, this);
+    goal_position_sub_ = nh_.subscribe("/goal_position", 1, &RobotControl::goalPositionCallback, this);
+    //direction_vector_sub_ = nh_.subscribe("/target_position", 1, &RobotControl::directionVectorCallback, this);
     
     u_sol_sub_ = nh_.subscribe("/u_sol", 1, &RobotControl::usolCallback, this);
     //sonar_limits_and_ranges_sub_ = nh_.subscribe("/sonar_degree_limits", 1, &RobotControl::sonarlimitsrangesCallback, this);
@@ -139,19 +139,26 @@ void RobotControl::sphericalMatrixCallback(const std_msgs::Float32MultiArray::Co
     }
 }
 
-void RobotControl::directionVectorCallback(const geometry_msgs::Vector3ConstPtr& input) {
+/*void RobotControl::directionVectorCallback(const geometry_msgs::Vector3ConstPtr& input) {
 
     direction_vector[0] = input->x;
     direction_vector[1] = input->y;
     direction_vector[2] = input->z;
-/*
-    goal_position.push_back(input->x);
-    goal_position.push_back(input->y);
-    goal_position.push_back(input->z);
-    */
+
     goal_point = true;
     //cout<<"here 1"<< endl;
     //cout << "direction_vector: " << direction_vector << endl;
+}*/
+
+void RobotControl::goalPositionCallback(const geometry_msgs::Vector3ConstPtr& input) {
+
+	//cout << "in goal position callback " << endl;
+
+	goal_position[0] = input->x;
+	goal_position[1] = input->y;
+	goal_position[2] = input->z;
+
+	goal_point = true;
 }
 
 void RobotControl::usolCallback(const geometry_msgs::Vector3ConstPtr& input){
@@ -160,9 +167,21 @@ void RobotControl::usolCallback(const geometry_msgs::Vector3ConstPtr& input){
     u_sol[1] = input->y;
     u_sol[2] = input->z;
 
-    if(u_sol[0] < 2){
+    // consider sending rather a goal point, so if it takes a long time to calculate the movement of the robot it won't suffer... 
+    // or the length of the solution vector and calculate goal point here... 
+
+    if(u_sol[0] < 999){
         orm_control = true;
-        initial_mode = false;    
+        initial_mode = false; 
+        Vector3d robot_orientation_v(robot_orientation[0], robot_orientation[1], robot_orientation[2]);
+	    float robot_orientation_w = robot_orientation[3];
+
+	    u_sol_global = u_sol + 2*robot_orientation_w*cross(robot_orientation_v, u_sol) +
+	    2*cross(robot_orientation_v, cross(robot_orientation_v, u_sol));
+
+	    target_position[0] = robot_position[0] + u_sol_global[0];
+	    target_position[1] = robot_position[1] + u_sol_global[1];
+	    target_position[2] = robot_position[2] + u_sol_global[2];   
     }
     else if(orm_control){
         // this happens only once when we are changing from orm control to non-orm control.
@@ -184,10 +203,15 @@ void RobotControl::robotPositionCallback(const geometry_msgs::PoseStampedConstPt
 
     if(goal_point){
 
+    	// Direction vector in global frame:
+    	direction_vector = target_position - robot_position;
 
-        double distance_from_goal_point_squared = pow(direction_vector[0], 2) + 
-        pow(direction_vector[1], 2) + pow(direction_vector[2], 2); 
+    	double length_of_direction_vector = vectorlength(direction_vector);
 
+    	Vector3d goal_vector = goal_position - robot_position;
+
+        double distance_from_goal_point_squared = pow(goal_vector[0], 2) + 
+        pow(goal_vector[1], 2) + pow(goal_vector[2], 2); 
 
 
         // if close enough to goal point just stay there .. 
@@ -207,11 +231,35 @@ void RobotControl::robotPositionCallback(const geometry_msgs::PoseStampedConstPt
                 goal_reached = true;
             }
 
-            set_pose.header.frame_id = "map";
+            // When using velocity commands:
+            
+
+            set_velocity.header.frame_id = "base_link";
+            set_velocity.header.stamp = ros::Time::now();
+
+            q[0] = robot_orientation[0];
+        	q[1] = robot_orientation[1];
+        	q[2] = robot_orientation[2];
+        	q[3] = robot_orientation[3];
+        	tf2::Matrix3x3 m(q);
+			m.getRPY(roll, pitch, yaw);
+
+
+
+            set_velocity.twist.linear.x = goal_position[0] - robot_position[0];
+            set_velocity.twist.linear.y = goal_position[1] - robot_position[1];
+            set_velocity.twist.linear.z = goal_position[2] - robot_position[2];
+
+            set_velocity.twist.angular.x = 0;
+            set_velocity.twist.angular.y = 0;
+            set_velocity.twist.angular.z = (goal_yaw - yaw) * omega_max;
+
+            // When using pose commands:
+            /*set_pose.header.frame_id = "map";
             set_pose.header.stamp = ros::Time::now();
-            set_pose.pose.position.x = robot_position[0] + direction_vector[0];
-            set_pose.pose.position.y = robot_position[1] + direction_vector[1];
-            set_pose.pose.position.z = robot_position[2] + direction_vector[2];
+            set_pose.pose.position.x = goal_position[0]; //robot_position[0] + direction_vector[0];
+            set_pose.pose.position.y = goal_position[1]; //robot_position[1] + direction_vector[1];
+            set_pose.pose.position.z = goal_position[2]; //robot_position[2] + direction_vector[2];
 
             q2.setRPY(0, 0, goal_yaw);
 
@@ -220,11 +268,13 @@ void RobotControl::robotPositionCallback(const geometry_msgs::PoseStampedConstPt
             set_pose.pose.orientation.z = q2.z();
             set_pose.pose.orientation.w = q2.w();
 
-            pub_desired_position_.publish(set_pose);
+            pub_desired_position_.publish(set_pose);*/
 
         }
         else{
             goal_reached = false;
+
+            
 
             if(orm_control){
                 // do the orm control
@@ -237,7 +287,18 @@ void RobotControl::robotPositionCallback(const geometry_msgs::PoseStampedConstPt
 
             	// theta needs to be the difference of the angle of robot and the target angle in xy plane...
                 // u sol is in robot frame...
-                theta = atan2(u_sol[1], u_sol[0]);
+                double yaw_desired = atan2(direction_vector[1], direction_vector[0]);
+
+                q[0] = robot_orientation[0];
+            	q[1] = robot_orientation[1];
+            	q[2] = robot_orientation[2];
+            	q[3] = robot_orientation[3];
+            	tf2::Matrix3x3 m(q);
+  				double roll, pitch, yaw;
+  				m.getRPY(roll, pitch, yaw);
+
+
+                theta = yaw_desired - yaw;//atan2(u_sol[1], u_sol[0]);
 
 
                 /*acos(u_sol[0]/xy_length_of_u_sol);
@@ -274,24 +335,25 @@ void RobotControl::robotPositionCallback(const geometry_msgs::PoseStampedConstPt
                 
 
                 //cout << "theta: " << theta << endl;
-                if(abs(theta) > 10 * pi / 180 && u_sol[2] < 0.85 && u_sol[2] > -0.85){
+                if(abs(theta) > 10 * pi / 180 && abs(u_sol[2] / (abs(u_sol[0])+abs(u_sol[1])+abs(u_sol[2]))) < 0.85){
                     // turn the robot..
                     if(!orm_turn_mode){
                         fixed_position = robot_position;
-                        if(fixed_position[2] <0.1){
-                        	fixed_position[2] = 0.5;
+                        if(fixed_position[2] <0.6){
+                        	fixed_position[2] = 0.7;
                         }
                         orm_turn_mode = true;
                     }
                     
-                    set_pose.header.frame_id = "map";
+                    // if using pose command:
+                    /*set_pose.header.frame_id = "map";
                     set_pose.header.stamp = ros::Time::now();
                     set_pose.pose.position.x = fixed_position[0];
                     set_pose.pose.position.y = fixed_position[1];
-                    set_pose.pose.position.z = fixed_position[2];
+                    set_pose.pose.position.z = fixed_position[2];*/
 
+                    /*
                     xy_length_of_direction_vector = sqrt(pow(direction_vector[0],2) + pow(direction_vector[1],2));
-
 					q[0] = robot_orientation[0];
                 	q[1] = robot_orientation[1];
                 	q[2] = robot_orientation[2];
@@ -299,12 +361,13 @@ void RobotControl::robotPositionCallback(const geometry_msgs::PoseStampedConstPt
                 	tf2::Matrix3x3 m(q);
       				double roll, pitch, yaw;
       				m.getRPY(roll, pitch, yaw);
+					*/
 
+                    // also this for pose command:
+                    /*tf2::Quaternion q;
 
-                    tf2::Quaternion q;
-
-                    cout << "angle in orm control: " << yaw+theta << endl;
-                    q.setRPY(0, 0, yaw+theta);
+                    cout << "angle in orm control: " << yaw_desired << endl;
+                    q.setRPY(0, 0, yaw_desired);
 
                     set_pose.pose.orientation.x = q.x();
                     set_pose.pose.orientation.y = q.y();
@@ -340,43 +403,56 @@ void RobotControl::robotPositionCallback(const geometry_msgs::PoseStampedConstPt
                     set_pose.pose.orientation.w = q.w();
                     */
 
-                    pub_desired_position_.publish(set_pose);
+                    //pub_desired_position_.publish(set_pose);
 
-                    /*omega = omega_max * theta / half_pi;
-                    set_velocity.twist.linear.x = 0;
-                    set_velocity.twist.linear.y = 0;
-                    set_velocity.twist.linear.z = 0;
+                    omega = omega_max * theta / half_pi;
+                	set_velocity.twist.linear.x = fixed_position[0] - robot_position[0];
+                	set_velocity.twist.linear.y = fixed_position[1] - robot_position[1];
+                	set_velocity.twist.linear.z = fixed_position[2] - robot_position[2];
                     set_velocity.twist.angular.x = 0;
                     set_velocity.twist.angular.y = 0;
-                    set_velocity.twist.angular.z = omega;*/
+                    set_velocity.twist.angular.z = omega;
                 }
                 else{
 
-                    geometry_msgs::TwistStamped set_velocity;
+                	// fly
+
+                    //geometry_msgs::TwistStamped set_velocity;
                     set_velocity.header.frame_id = "base_link";
                     set_velocity.header.stamp = ros::Time::now();
 
 
-                    if(abs(u_sol[2]) > 0.8){
+                    if(abs(u_sol[2] / (abs(u_sol[0])+abs(u_sol[1])+abs(u_sol[2]))) > 0.85){
                     	// this means we go straight down or up
                     	v = v_max;
-                    	set_pose.pose.orientation.x = robot_orientation[0];
+                    	/*set_pose.pose.orientation.x = robot_orientation[0];
 	                    set_pose.pose.orientation.y = robot_orientation[1];
 	                    set_pose.pose.orientation.z = robot_orientation[2];
 	                    set_pose.pose.orientation.w = robot_orientation[3];
-	                    cout << "robot angle in moving control" << endl;
+	                    cout << "robot angle in moving control" << endl;*/
+	                    set_velocity.twist.angular.x = 0;
+                    	set_velocity.twist.angular.y = 0;
+                    	set_velocity.twist.angular.z = 0;
 
                     }
                     else{
 
-	                    q[0] = robot_orientation[0];
+                    	/*q.setRPY(0, 0, yaw_desired);
+
+	                    set_pose.pose.orientation.x = q.x();
+	                    set_pose.pose.orientation.y = q.y();
+	                    set_pose.pose.orientation.z = q.z();
+	                    set_pose.pose.orientation.w = q.w();
+	                    */
+
+	                    /*q[0] = robot_orientation[0];
 	                	q[1] = robot_orientation[1];
 	                	q[2] = robot_orientation[2];
 	                	q[3] = robot_orientation[3];
 	                	tf2::Matrix3x3 m(q);
 	      				double roll, pitch, yaw;
 	      				m.getRPY(roll, pitch, yaw);
-
+	      				*/
 	                    if(nearest_obstacle_distance > safety_distance){
 	                        v = v_max * (half_pi-abs(theta))/half_pi;
 	                    }
@@ -384,42 +460,39 @@ void RobotControl::robotPositionCallback(const geometry_msgs::PoseStampedConstPt
 	                        v = v_max * nearest_obstacle_distance/safety_distance * (half_pi-abs(theta))/half_pi;
 	                    }
 
+                        omega = omega_max * theta / half_pi;
+	                    set_velocity.twist.angular.x = 0;
+	                    set_velocity.twist.angular.y = 0;
+	                    set_velocity.twist.angular.z = omega;
+	      
+	                    /*
 	                    cout << "angle in moving orm control: " << yaw+theta << "yaw: " << yaw << "theta: " << theta << endl;
 	                    q.setRPY(0, 0, yaw+theta);
 	                    set_pose.pose.orientation.x = q.x();
 	                    set_pose.pose.orientation.y = q.y();
 	                    set_pose.pose.orientation.z = q.z();
-	                    set_pose.pose.orientation.w = q.w();
+	                    set_pose.pose.orientation.w = q.w();*/
 	                }
                     if(distance_from_goal_point_squared < 4){
                         // lower speed because getting close to target
                          v *= sqrt(distance_from_goal_point_squared)/2+0.05;
-
                     }
                     cout << "nearest_obstacle_distance" << nearest_obstacle_distance << endl; 
                     cout << "u_sol in control: " << u_sol  << "and v is: " << v << endl;
 
-                    Vector3d robot_orientation_v(robot_orientation[0], robot_orientation[1], robot_orientation[2]);
-                    float robot_orientation_w = robot_orientation[3];
 
-                    Vector3d u_sol_global = u_sol + 2*robot_orientation_w*cross(robot_orientation_v, u_sol) +
-                    2*cross(robot_orientation_v, cross(robot_orientation_v, u_sol));
-
-
-                    set_pose.pose.position.x = robot_position[0]+ u_sol_global[0]*v;
-                    set_pose.pose.position.y = robot_position[1]+ u_sol_global[1]*v;
-                    set_pose.pose.position.z = robot_position[2]+ u_sol_global[2]*v;
-                    
-
-                    
-                    /*set_velocity.twist.linear.x = u_sol_global[0]*v;
-                    set_velocity.twist.linear.y = u_sol_global[1]*v;
-                    set_velocity.twist.linear.z = u_sol_global[2]*v;
-                    set_velocity.twist.angular.x = 0;
-                    set_velocity.twist.angular.y = 0;
-                    set_velocity.twist.angular.z = 0;
-                    pub_desired_velocity_.publish(set_velocity);*/
+                    /*set_pose.pose.position.x = target_position[0];//robot_position[0]+ u_sol_global[0]*v;
+                    set_pose.pose.position.y = target_position[1];//robot_position[1]+ u_sol_global[1]*v;
+                    set_pose.pose.position.z = target_position[2];//robot_position[2]+ u_sol_global[2]*v;
                     pub_desired_position_.publish(set_pose);
+*/
+                    Vector3d unitary_direction_vector = direction_vector/length_of_direction_vector;
+                    set_velocity.twist.linear.x = v*unitary_direction_vector[0];//u_sol_global[0]*v;
+                    set_velocity.twist.linear.y = v*unitary_direction_vector[1];
+                    set_velocity.twist.linear.z = v*unitary_direction_vector[2];
+
+                    //pub_desired_velocity_.publish(set_velocity);
+                    
 
                     orm_turn_mode = false;
 
@@ -427,7 +500,14 @@ void RobotControl::robotPositionCallback(const geometry_msgs::PoseStampedConstPt
                 }
             }
             else{
-                // keep on same spot and turn towards target point.
+
+            	Vector3d goal_direction = goal_position - robot_position;
+            	double yaw_desired =  atan2(goal_direction[1], goal_direction[0]);
+
+            	if(fixed_position[2] <0.5){
+                        	fixed_position[2] = 0.7;
+                }
+                // keep on same spot and turn towards target point, NOT orm control...
 
                 //direction_vector = goal_position - robot_position;
 
@@ -437,12 +517,12 @@ void RobotControl::robotPositionCallback(const geometry_msgs::PoseStampedConstPt
 
                 //cout << "direction_vector: " << direction_vector[0] << " " << direction_vector[1] <<" " << direction_vector[2] << endl;
 
-                xy_length_of_direction_vector = sqrt(pow(direction_vector[0],2) + pow(direction_vector[1],2));
+                //xy_length_of_direction_vector = sqrt(pow(direction_vector[0],2) + pow(direction_vector[1],2));
 
                 set_pose.header.frame_id = "map";
                 set_pose.header.stamp = ros::Time::now();
 
-                theta = atan2(direction_vector[1], direction_vector[0]);/*acos(direction_vector[0]/xy_length_of_direction_vector);
+                /*theta = atan2(direction_vector[1], direction_vector[0]);/*acos(direction_vector[0]/xy_length_of_direction_vector);
                 if(direction_vector[1] < 0){
                         theta = -theta;
                 }*/
@@ -452,55 +532,77 @@ void RobotControl::robotPositionCallback(const geometry_msgs::PoseStampedConstPt
                 //and we want to turn around z axis so our quaternion coordinates become:
                 //double x= 0;
                 //double y = 0;
-                z_turn = 1*sin(theta/2);
-                w_turn = cos(theta/2);
+                //z_turn = 1*sin(theta/2);
+                //w_turn = cos(theta/2);
 
                 
                 if(initial_mode){// only do this if we haven't started moving yet.. 
-                    set_pose.pose.position.x = 0;
-                    set_pose.pose.position.y = 0;
-                    set_pose.pose.position.z = 1;
-                    //}
+                    set_velocity.twist.linear.x = 0;
+                	set_velocity.twist.linear.y = 0;
+                	set_velocity.twist.linear.z = 1 - robot_position[2];   // very simple P controller, consider changing...
+                    //set_pose.pose.position.x = 0;
+                    //set_pose.pose.position.y = 0;
+                    //set_pose.pose.position.z = 1;
+                    
                 }
-                else{
-                    set_pose.pose.position.x = fixed_position[0];
+                else{ // otherwise keep same position if we have no u_sol ..
+                	set_velocity.twist.linear.x = fixed_position[0] - robot_position[0];
+                	set_velocity.twist.linear.y = fixed_position[1] - robot_position[1];
+                	set_velocity.twist.linear.z = fixed_position[2] - robot_position[2];
+
+                    /*set_pose.pose.position.x = fixed_position[0];
                     set_pose.pose.position.y = fixed_position[1];
-                    set_pose.pose.position.z = fixed_position[2];
+                    set_pose.pose.position.z = fixed_position[2];*/
                 }
 
-                // otherwise keep same position if we have no u_sol .. 
+                
 
-                if(xy_length_of_direction_vector >0.2){
-                    set_pose.pose.orientation.x = 0;
-                    set_pose.pose.orientation.y = 0;
-                    set_pose.pose.orientation.z = z_turn;
-                    set_pose.pose.orientation.w = w_turn;                    
-                }
-                else{
-                	q[0] = robot_orientation[0];
-                	q[1] = robot_orientation[1];
-                	q[2] = robot_orientation[2];
-                	q[3] = robot_orientation[3];
-                	tf2::Matrix3x3 m(q);
-      				double roll, pitch, yaw;
-      				m.getRPY(roll, pitch, yaw);
+                /*if(abs(goal_direction[2] / (abs(goal_direction[0])+abs(goal_direction[1])+abs(goal_direction[2]))) > 0.85){		//xy_length_of_direction_vector >0.2){
+                	set_velocity.twist.angular.x = 0;
+                    set_velocity.twist.angular.y = 0;
+                    set_velocity.twist.angular.z = 0;
 
-                    tf2::Quaternion q2;
-                    q2.setRPY(0, 0, yaw);
-
-                    cout << "angle in control: " << yaw << endl;
-                    set_pose.pose.orientation.x = q2.x();
-                    set_pose.pose.orientation.y = q2.y();
-                    set_pose.pose.orientation.z = q2.z();
-                    set_pose.pose.orientation.w = q2.w();
-                }
+                	/*q.setRPY(0, 0, yaw_desired);
+                    set_pose.pose.orientation.x = q.x();
+                    set_pose.pose.orientation.y = q.y();
+                    set_pose.pose.orientation.z = q.z();
+                    set_pose.pose.orientation.w = q.w();*/                   
+                //}
+                //else{
+                	
 
 
-                pub_desired_position_.publish(set_pose);
+            	q[0] = robot_orientation[0];
+            	q[1] = robot_orientation[1];
+            	q[2] = robot_orientation[2];
+            	q[3] = robot_orientation[3];
+            	tf2::Matrix3x3 m(q);
+  				double roll, pitch, yaw;
+  				m.getRPY(roll, pitch, yaw);
+				
+				theta = yaw_desired - yaw;
+				set_velocity.twist.angular.x = 0;
+                set_velocity.twist.angular.y = 0;
+                set_velocity.twist.angular.z =  omega_max*(theta)/half_pi;
+
+
+/*                    tf2::Quaternion q2;
+                q2.setRPY(0, 0, yaw);
+                cout << "angle in control: " << yaw << endl;
+                set_pose.pose.orientation.x = q2.x();
+                set_pose.pose.orientation.y = q2.y();
+                set_pose.pose.orientation.z = q2.z();
+                set_pose.pose.orientation.w = q2.w();
+                */
+                //}
+
+
+                //pub_desired_position_.publish(set_pose);
 
                 orm_turn_mode = false;
             }
         }
+        pub_desired_velocity_.publish(set_velocity);
     }
 }
 
@@ -512,6 +614,11 @@ Vector3d RobotControl::cross(const Vector3d & vec1, const Vector3d & vec2){
     cross_product[2] = vec1[0]*vec2[1] - vec1[1]*vec2[0];
     
     return ( cross_product );
+}
+
+float RobotControl::vectorlength(const Vector3d & vec){
+	
+	return ( sqrt(vec[0]*vec[0] + vec[1]*vec[1] + vec[2]*vec[2]) );
 }
 
 int main(int argc, char** argv)

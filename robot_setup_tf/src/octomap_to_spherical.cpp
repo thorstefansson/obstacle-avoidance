@@ -37,6 +37,9 @@ OctomapToSpherical::OctomapToSpherical(ros::NodeHandle* nodehandle):nh_(*nodehan
     deg_resolution = 6;
     M = 180 / deg_resolution;
     N = 360 / deg_resolution;
+
+    half_box_width_m = box_width_m/2;
+    half_box_width_m_sq = pow(half_box_width_m, 2);
     // can also do tests/waits to make sure all required services, topics, etc are alive
 }
 
@@ -71,9 +74,9 @@ void OctomapToSpherical::initializePublishers()
     ROS_INFO("Initializing Publishers");
     //minimal_publisher_ = nh_.advertise<std_msgs::Float32>("example_class_output_topic", 1, true); 
 
-    pub = nh_.advertise<sensor_msgs::PointCloud2>("spherical_cloud", 1, true);
-    pub_matrix = nh_.advertise<std_msgs::Float32MultiArray>("spherical_matrix", 1, true);
-    pub_cloud = nh_.advertise<sensor_msgs::PointCloud2>("bounding_box", 1, true);
+    pub = nh_.advertise<sensor_msgs::PointCloud2>("/spherical_cloud", 1, true);
+    pub_matrix = nh_.advertise<std_msgs::Float32MultiArray>("/spherical_matrix", 1, true);
+    pub_cloud = nh_.advertise<sensor_msgs::PointCloud2>("/bounding_box", 1, true);
     pub_init_cloud = nh_.advertise<sensor_msgs::PointCloud2>("/cloud_to_octomap", 1, true);
 
     //add more publishers, as needed
@@ -206,8 +209,6 @@ void OctomapToSpherical::octoMapCallback(const octomap_msgs::OctomapConstPtr& oc
     octomap::AbstractOcTree* oldtree = octomap_msgs::binaryMsgToMap(*octomap_msg);
     octomap::OcTree* tree = (octomap::OcTree*)oldtree;
 
-    
-    double half_box_width_m = box_width_m/2;
 
     point3d min;
     min.x() = robot_position[0] - half_box_width_m; min.y() = robot_position[1] - half_box_width_m; min.z() = robot_position[2] - half_box_width_m;
@@ -297,7 +298,6 @@ void OctomapToSpherical::octoMapCallback(const octomap_msgs::OctomapConstPtr& oc
     double sphere_matrix [M][N] = {0};
     double r_sq, distance_sq, node_size;
     int node_size_multiple, size_distance_factor;
-    double half_box_width_m_sq = pow(half_box_width_m, 2);
     double x,y,z;
 
     // Now we need to rotate the coordinates so they are in robot frame.....

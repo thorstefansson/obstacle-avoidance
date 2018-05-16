@@ -76,7 +76,9 @@ void MotionComputation::initializeSubscribers()
     //camera_subscriber_ = nh_.subscribe("/camera/depth/points", 1, &MotionComputation::cameraCallback, this); 
     goal_position_sub_ = nh_.subscribe("/goal_position", 1, &MotionComputation::goalPositionCallback, this);
 	occupancy_matrix_sub_ = nh_.subscribe("/spherical_matrix", 1, &MotionComputation::sphericalMatrixCallback, this);
-	sonar_limits_and_ranges_sub_ = nh_.subscribe("/sonar_degree_limits", 1, &MotionComputation::sonarlimitsrangesCallback, this);
+	//sonar_limits_and_ranges_sub_ = nh_.subscribe("/sonar_degree_limits", 1, &MotionComputation::sonarlimitsrangesCallback, this);
+	sonar_up_subscriber_ = nh_.subscribe("/sonar_up/range", 1, &MotionComputation::sonarupCallback, this);    //<sensor_msgs::PointCloud2> ("/camera/depth/points", 1, cloud_cb);
+    sonar_down_subscriber_ = nh_.subscribe("/sonar_down/range", 1, &MotionComputation::sonardownCallback, this);  
 	//camera_subscriber_ = nh_.subscribe("/voxelpoints", 1, &MotionComputation::cameraCallback, this);
 	robot_position_sub_ = nh_.subscribe("/mavros/local_position/pose", 1, &MotionComputation::robotPositionCallback, this);
 	octomap_sub_ = nh_.subscribe("/octomap_binary", 1, &MotionComputation::octoMapCallback, this);
@@ -104,10 +106,15 @@ void MotionComputation::initializePublishers()
     pub_Cspace = nh_.advertise<sensor_msgs::PointCloud2>("Cspace_cloud", 1, true);
     pub_subgoal_cloud= nh_.advertise<sensor_msgs::PointCloud2>("subgoal_cloud", 1, true);
     pub_selected_subgoal = nh_.advertise<sensor_msgs::PointCloud2>("selected_subgoal", 1, true);
+    pub_u_dom_cloud = nh_.advertise<sensor_msgs::PointCloud2>("/u_dom_cloud",1, true);
+    
 
     pub_desired_position_ = nh_.advertise<geometry_msgs::PoseStamped>("/mavros/setpoint_position/local", 1, true);
     pub_target_vector = nh_.advertise<geometry_msgs::Vector3>("/target_position",1, true);
     pub_u_sol = nh_.advertise<geometry_msgs::Vector3>("/u_sol",1, true);
+
+
+    
     //pub_u_targ = nh_.advertise<geometry_msgs::Vector3>("/u_targ",1, true);
 
 }
@@ -319,14 +326,20 @@ void MotionComputation::initializeSphere()
 	}
 }
 
-void MotionComputation::sonarlimitsrangesCallback(const std_msgs::Int16MultiArray::ConstPtr& input){
+/*void MotionComputation::sonarlimitsrangesCallback(const std_msgs::Int16MultiArray::ConstPtr& input){
 	sonar_up_limit = input -> data[0];
 	range_up = input -> data[1];
 	sonar_down_limit = input -> data[2];
 	range_down = input -> data[3];
-
 	//cout << "sonar up limit: " << sonar_up_limit << "sonar down limit: " 
 	//<< sonar_down_limit << "range_up: " << range_up << "range_down: " << range_down << endl;
+}*/
+void MotionComputation::sonarupCallback(const sensor_msgs::RangeConstPtr& input) {
+    range_up = input->range;
+}
+void MotionComputation::sonardownCallback(const sensor_msgs::RangeConstPtr& input) {
+    range_down = input->range;
+    //cout << "in sonar down callback, range down: " << range_down;
 }
 
 
@@ -1295,7 +1308,7 @@ void MotionComputation::goalPositionCallback(const geometry_msgs::Vector3ConstPt
 			// I think it's done this way : 
 			//if(u_targ[1] > 0){
 
-			// -----------------------iterate over sphere matrix to divide it into quarters-----------------------
+			// -----------------------Iterate over sphere matrix to divide it into quarters-----------------------
 			for(m = 0; m<M; m++){
 				for(n=0;n<N;n++){
 					// check if obstacle located in direction:
@@ -1371,7 +1384,10 @@ void MotionComputation::goalPositionCallback(const geometry_msgs::Vector3ConstPt
 			
 			// Iterate over spherical matrix to find S2 and n_D vectors for each quarter:
 			int m_temp_min;
-			if(range_down < 0.1) m_temp_min = 0; // to get rid of shit values at m = 0
+			if(range_down < 0.1){
+				m_temp_min = 0; // to get rid of shit values at m = 0
+				cout << "range_down: " << range_down << endl;	
+			} 
 			else m_temp_min= 1;
 
 
@@ -1403,7 +1419,9 @@ void MotionComputation::goalPositionCallback(const geometry_msgs::Vector3ConstPt
 							gamma += (pi - gamma)*(1 - (sphere_matrix[m][n]-robot_radius)/safety_distance);
 							// add angle to some collective bad direction for each quarter.......
 							bad_angle = true;
-						}
+							//cout << "bad angle at m: " << m << "and n: " << n << endl;
+							//cout << "distance at bad angle: " << sphere_matrix[m][n];
+							}
 						 
 						//check what quadrant obstacle is in.. TR 0, DR 1, DL 2, TL 3;
 						if(quadrant_matrix[m][n] > 1){
@@ -1417,7 +1435,7 @@ void MotionComputation::goalPositionCallback(const geometry_msgs::Vector3ConstPt
 								m_gamma = ceil(gamma * M / pi);
 								m_min = m - m_gamma;
 								m_max = m + m_gamma;
-								if(m_min < 0 || m_max >= M ){
+								if(m_min < 0 || m_max > M ){
 									m_max = M;
 									m_min = 0;
 								}
@@ -1442,6 +1460,7 @@ void MotionComputation::goalPositionCallback(const geometry_msgs::Vector3ConstPt
 								}
 								if(bad_angle){
 									bad_directions_DL.push_back(row1);
+									bad_angle = false;
 								}
 							}
 							else{
@@ -1450,7 +1469,7 @@ void MotionComputation::goalPositionCallback(const geometry_msgs::Vector3ConstPt
 								m_gamma = ceil(gamma * M / pi);
 								m_min = m - m_gamma;
 								m_max = m + m_gamma;
-								if(m_min < 0 || m_max >= M ){
+								if(m_min < 0 || m_max > M ){
 									m_max = M;
 									m_min = 0;
 								}
@@ -1472,6 +1491,7 @@ void MotionComputation::goalPositionCallback(const geometry_msgs::Vector3ConstPt
 								}
 								if(bad_angle){
 									bad_directions_TL.push_back(row1);
+									bad_angle = false;
 								}
 							}
 						}
@@ -1484,7 +1504,7 @@ void MotionComputation::goalPositionCallback(const geometry_msgs::Vector3ConstPt
 								m_gamma = ceil(gamma * M / pi);
 								m_min = m - m_gamma;
 								m_max = m + m_gamma;
-								if(m_min < 0 || m_max >= M ){
+								if(m_min < 0 || m_max > M ){
 									m_max = M;
 									m_min = 0;
 								}
@@ -1506,6 +1526,7 @@ void MotionComputation::goalPositionCallback(const geometry_msgs::Vector3ConstPt
 								}
 								if(bad_angle){
 									bad_directions_TR.push_back(row1);
+									bad_angle = false;
 								}
 
 							}
@@ -1515,7 +1536,7 @@ void MotionComputation::goalPositionCallback(const geometry_msgs::Vector3ConstPt
 								m_gamma = ceil(gamma * M / pi);
 								m_min = m - m_gamma;
 								m_max = m + m_gamma;
-								if(m_min < 0 || m_max >= M ){
+								if(m_min < 0 || m_max > M ){
 									m_max = M;
 									m_min = 0;
 								}
@@ -1537,6 +1558,7 @@ void MotionComputation::goalPositionCallback(const geometry_msgs::Vector3ConstPt
 								}
 								if(bad_angle){
 									bad_directions_DR.push_back(row1);
+									bad_angle = false;
 								}
 							}
 						}
@@ -1576,6 +1598,9 @@ void MotionComputation::goalPositionCallback(const geometry_msgs::Vector3ConstPt
 			Vector3d temp_vec_3d;
 			int n_target = (theta_u_targ + pi) * N / 2 / pi;
 
+			// Not sure if following is necessary:
+			if(n_target < 0) n_target = 0;
+			if(n_target > N) n_target = N; 
 			// for TL first : 
 			// iterate over left quarters:
 			if(n_D_vectors_TL.size() > 0){
@@ -1674,7 +1699,7 @@ void MotionComputation::goalPositionCallback(const geometry_msgs::Vector3ConstPt
 
 			for(m = 0; m < M ; m ++){
 				for (n = 0; n < N; n++){
-					countx = 0;
+					//countx = 0;
 					// For TL:
 					if(S_TL_bound[m][n]){
 						// check if free or not.. 
@@ -1777,7 +1802,7 @@ void MotionComputation::goalPositionCallback(const geometry_msgs::Vector3ConstPt
 			bool free_direction = false;
 			for(m=0;m<M;m++){
 				for(n=0;n<N;n++){
-					if(!S_nD_DL[m][n] && !S_nD_DR && !S_nD_TL && !S_nD_TR){
+					if(!S_nD_DL[m][n] && !S_nD_DR[m][n] && !S_nD_TL[m][n] && !S_nD_TR[m][n]){
 						// this direction is free
 						free_direction = true;
 						break;
@@ -1802,8 +1827,8 @@ void MotionComputation::goalPositionCallback(const geometry_msgs::Vector3ConstPt
 
 		    if(m_targ < 0) m_targ = 0;
 		    if(n_targ < 0) n_targ = 0;
-		    if(m_targ > M) m_targ = M;
-		    if(n_targ > N) n_targ = N;	
+		    if(m_targ >= M) m_targ = M-1;
+		    if(n_targ >= N) n_targ = N-1;	
 
 		    
 
@@ -1995,7 +2020,7 @@ void MotionComputation::goalPositionCallback(const geometry_msgs::Vector3ConstPt
 							use_u_TL_dom = true;
 							u_targ_S_nD_count++;
 
-							cout  << "u_TL_dom: " << u_TL_dom << endl;
+							//cout  << "u_TL_dom: " << u_TL_dom << endl;
 						}
 					}					
 				}
@@ -2028,7 +2053,7 @@ void MotionComputation::goalPositionCallback(const geometry_msgs::Vector3ConstPt
 						cout << "bound directions for TR < 2, no free directions" << endl;
 						// in this case calculate u_TR_dom from the bad directions... 
 						sumx=0, sumy=0, sumz=0;
-						if(bad_directions_TL.size() > 0){
+						if(bad_directions_TR.size() > 0){
 							for (int i = 0 ; i < bad_directions_TR.size(); i++){
 								//sum_vector += bad_directions_TL[i];
 								sumx +=bad_directions_TR[i][0];
@@ -2094,7 +2119,7 @@ void MotionComputation::goalPositionCallback(const geometry_msgs::Vector3ConstPt
 							u_DR_dom[2] = -sumz;
 							use_u_DR_dom = true;
 							u_targ_S_nD_count++;
-							cout  << "u_DR_dom: " << u_DR_dom << endl;
+							//cout  << "u_DR_dom: " << u_DR_dom << endl;
 
 						}
 					}					
@@ -2145,7 +2170,7 @@ void MotionComputation::goalPositionCallback(const geometry_msgs::Vector3ConstPt
 							u_DL_dom[2] = -sumz;
 							use_u_DL_dom = true;
 							u_targ_S_nD_count++;
-							cout  << "u_DR_dom: " << u_DR_dom << endl;
+							//cout  << "u_DR_dom: " << u_DR_dom << endl;
 						}
 					}					
 				}
@@ -2158,12 +2183,24 @@ void MotionComputation::goalPositionCallback(const geometry_msgs::Vector3ConstPt
 			cout << "u_targ_S_nD_count: " << u_targ_S_nD_count << endl;*/
 
 
+			PointCloud::Ptr msg (new PointCloud);
+			msg->header.frame_id = "base_link";
+			msg->height = 1;
+
 			if(u_targ_S_nD_count == 0){
+				// to visulize u_doms in rviz:
+				msg->width = 1;
+				msg->points.push_back (pcl::PointXYZ(0,0,0));
+
+
 		    	// this means we should fly straight to target since it is free
 		    	cout << "fly straight to target point" << endl;
 		    	u_sol = u_targ;
 		    }
 			else if(u_targ_S_nD_count == 1){
+				msg->width = 1;
+
+
 				// target direction only belongs to one S_nD of four sets of motion constraints...
 				/*if(S_nD_TL[m_targ][n_targ]) u_sol = u_TL_dom;
 				else if(S_nD_DL[m_targ][n_targ]) u_sol = u_DL_dom;
@@ -2173,10 +2210,14 @@ void MotionComputation::goalPositionCallback(const geometry_msgs::Vector3ConstPt
 				else if(use_u_DL_dom) u_sol = u_DL_dom;
 				else if(use_u_TR_dom) u_sol = u_TR_dom;
 				else if(use_u_DR_dom) u_sol = u_DR_dom;
+				msg->points.push_back(pcl::PointXYZ(u_sol[0],u_sol[1],u_sol[2]));
 			}
 			else if(u_targ_S_nD_count == 2){
 				// target direction belongs to two sets of motion constraints
 				// use average value of those two.. 
+
+				msg->width = 2;
+
 				cout << "target direction belongs to 2 sets of motion constraints" << endl;
 				countx = 0;
 
@@ -2208,8 +2249,11 @@ void MotionComputation::goalPositionCallback(const geometry_msgs::Vector3ConstPt
 				if(use_u_TL_dom){
 					temp_vec_3d = u_TL_dom;
 					countx++;
+
+					msg->points.push_back(pcl::PointXYZ(u_TL_dom[0],u_TL_dom[1],u_TL_dom[2]));
 				}
 				if(use_u_DL_dom){
+					msg->points.push_back(pcl::PointXYZ(u_DL_dom[0],u_DL_dom[1],u_DL_dom[2]));
 					if(countx == 0){
 						temp_vec_3d = u_DL_dom;
 						countx++;
@@ -2219,6 +2263,7 @@ void MotionComputation::goalPositionCallback(const geometry_msgs::Vector3ConstPt
 					}
 				}
 				if(use_u_TR_dom){
+					msg->points.push_back(pcl::PointXYZ(u_TR_dom[0],u_TR_dom[1],u_TR_dom[2]));
 					if(countx == 0){
 						temp_vec_3d = u_TR_dom;
 						countx++;
@@ -2229,26 +2274,52 @@ void MotionComputation::goalPositionCallback(const geometry_msgs::Vector3ConstPt
 				}
 				if(use_u_DR_dom){
 					u_sol = (temp_vec_3d + u_DR_dom)/2;
+
+					msg->points.push_back(pcl::PointXYZ(u_DR_dom[0],u_DR_dom[1],u_DR_dom[2]));
 				}
 			}
 			else if(u_targ_S_nD_count == 3){
+
+				msg->width = 3;
+
 				// target direction belongs to three sets of motion constraints..
 				cout << "target direction belongs to 3 sets of motion constraints" << endl;
 				//if(S_nD_TL[m_targ][n_targ] && S_nD_DR[m_targ][n_targ]){
 				if(use_u_TL_dom && use_u_DR_dom){
+					msg->points.push_back(pcl::PointXYZ(u_TL_dom[0],u_TL_dom[1],u_TL_dom[2]));
+					msg->points.push_back(pcl::PointXYZ(u_DR_dom[0],u_DR_dom[1],u_DR_dom[2]));
+
 					if(use_u_TR_dom){
 						u_sol = ((u_TL_dom + u_DR_dom)/2 + u_TR_dom) / 2;
+						msg->points.push_back(pcl::PointXYZ(u_TR_dom[0],u_TR_dom[1],u_TR_dom[2]));
 					}
 					else{
 						u_sol = ((u_TL_dom + u_DR_dom)/2 + u_DL_dom) / 2;
+						msg->points.push_back(pcl::PointXYZ(u_DL_dom[0],u_DL_dom[1],u_DL_dom[2]));
 					}
 				}
 				else{
-					if(use_u_TL_dom) u_sol = ((u_TR_dom + u_DL_dom)/2 + u_TL_dom) / 2;
-					else u_sol = ((u_TR_dom + u_DL_dom)/2 + u_DR_dom) / 2;
+					msg->points.push_back(pcl::PointXYZ(u_TR_dom[0],u_TR_dom[1],u_TR_dom[2]));
+					msg->points.push_back(pcl::PointXYZ(u_DL_dom[0],u_DL_dom[1],u_DL_dom[2]));
+					if(use_u_TL_dom){
+						u_sol = ((u_TR_dom + u_DL_dom)/2 + u_TL_dom) / 2;
+
+						msg->points.push_back(pcl::PointXYZ(u_TL_dom[0],u_TL_dom[1],u_TL_dom[2]));
+					} 
+					else{
+						u_sol = ((u_TR_dom + u_DL_dom)/2 + u_DR_dom) / 2;
+
+						msg->points.push_back(pcl::PointXYZ(u_DR_dom[0],u_DR_dom[1],u_DR_dom[2]));
+					} 
 				}
 			}
 			else{
+				msg->width = 4;
+				msg->points.push_back(pcl::PointXYZ(u_TL_dom[0],u_TL_dom[1],u_TL_dom[2]));
+				msg->points.push_back(pcl::PointXYZ(u_DR_dom[0],u_DR_dom[1],u_DR_dom[2]));
+				msg->points.push_back(pcl::PointXYZ(u_TR_dom[0],u_TR_dom[1],u_TR_dom[2]));
+				msg->points.push_back(pcl::PointXYZ(u_DL_dom[0],u_DL_dom[1],u_DL_dom[2]));
+
 				// target direction belongs to all four sets of motion constraints..
 				cout << "target direction belongs to all 4 sets of motion constraints" << endl;
 				Vector3d u_TR_DL_dom, u_TL_DR_dom, n_E, n_F;
@@ -2264,6 +2335,13 @@ void MotionComputation::goalPositionCallback(const geometry_msgs::Vector3ConstPt
     		cout << "u_sol:" << u_sol << endl;
 
     		u_sol *= target_distance;
+
+    		// To publish the u_dom vectors to cloud:
+    		// Convert to ROS data type
+		  	sensor_msgs::PointCloud2 output;
+		  	pcl::toROSMsg(*msg, output);
+		  	// Publish the data
+		  	pub_u_dom_cloud.publish (output);
 
 	    } // end of if (!nothing_reachable)
 	    else{
@@ -2286,6 +2364,7 @@ void MotionComputation::goalPositionCallback(const geometry_msgs::Vector3ConstPt
     u_sol_vector.y = u_sol[1];
     u_sol_vector.z = u_sol[2];
     pub_u_sol.publish(u_sol_vector);
+
 }
 
 void MotionComputation::robotPositionCallback(const geometry_msgs::PoseStampedConstPtr& input) {
@@ -2596,7 +2675,7 @@ bool MotionComputation::isReachable(const Vector3d & direction){
 				//addObstacleSphere(obstacle_point_center_x, obstacle_point_center_y, obstacle_point_center_z, cspace_length);
 
 				//profum thennan stutta koda i stadinn til ad athuga hvort hann virki:
-				/*for(county = 0; county< cspace_half_width ; county ++){
+				for(county = 0; county< cspace_half_width ; county ++){
                     for(countz = 0; countz< cspace_half_width ; countz ++){
 						for(countx = 0; countx< cspace_half_width ; countx ++){
 							if(sphere_model[countx][county][countz] == 1){
@@ -2641,10 +2720,10 @@ bool MotionComputation::isReachable(const Vector3d & direction){
 							}
 						}
 					}
-				}*/
+				}
 
 				//cout << "x: " << obstacle_point_center_x << "y: " << obstacle_point_center_y << "z: " << obstacle_point_center_z << endl;
-
+				/*
 				if (obstacle_point_center_x + cspace_half_width < cspace_length && obstacle_point_center_x - cspace_half_width > 0 ){
                     if(obstacle_point_center_y < 0){
 						// This means the center is to the left of the matrix
@@ -3615,6 +3694,7 @@ bool MotionComputation::isReachable(const Vector3d & direction){
 		  			// now we are back where we started soo..
 		  			cout << "subgoal not reachable" << endl;
                     return false;
+                    break;
 		  		}
 		  		countx = 0;
 		  		for (y_itr = 0; y_itr < cspace_width; y_itr++){

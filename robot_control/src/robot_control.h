@@ -41,11 +41,19 @@ using namespace Eigen;
 #include <tf2/LinearMath/Quaternion.h>
 #include <tf2/LinearMath/Matrix3x3.h>
 
+#include <pcl_conversions/pcl_conversions.h>
+//#include <pcl/conversions.h>
+#include <pcl/point_cloud.h>
+#include <pcl/point_types.h>
+#include <pcl_ros/point_cloud.h>
+
 ros::Publisher pub;
 
 //using namespace cmath
 
 using namespace std;
+typedef pcl::PointCloud<pcl::PointXYZ> PointCloud;
+
 
 
 
@@ -66,7 +74,7 @@ private:
     ros::Subscriber occupancy_matrix_sub_;
     ros::Subscriber u_sol_sub_;
     ros::Subscriber goal_position_sub_;
-
+    ros::Publisher pub_u_sol_cloud;
     //ros::Subscriber u_targ_sub_
 
     //ros::Subscriber camera_subscriber_;
@@ -110,7 +118,7 @@ private:
     tf2::Quaternion q, q2;
     double roll, pitch, yaw;
 
-
+    double goal_yaw;
     double z_turn, w_turn, xy_length_of_direction_vector, xy_length_of_u_sol;
 
     geometry_msgs::PoseStamped set_pose;

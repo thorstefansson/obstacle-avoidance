@@ -73,7 +73,10 @@ private:
     ros::Subscriber robot_position_sub_;
     ros::Subscriber goal_position_sub_;
     ros::Subscriber occupancy_matrix_sub_;
-    ros::Subscriber sonar_limits_and_ranges_sub_;
+//    ros::Subscriber sonar_limits_and_ranges_sub_;
+    ros::Subscriber sonar_up_subscriber_;
+    ros::Subscriber sonar_down_subscriber_;
+
     //ros::Subscriber camera_subscriber_;
 
     ros::Subscriber octomap_sub_;
@@ -86,6 +89,8 @@ private:
     ros::Publisher pub_Cspace;
     ros::Publisher pub_selected_subgoal;
     ros::Publisher pub_u_sol;
+    ros::Publisher pub_u_dom_cloud; // for publishing the u_dom that are used...
+
     //ros::Publisher pub_u_targ;
     // Target vector equals direction vector to goal point if it is rechable, 
     // otherwise the closest reachable sublgoal
@@ -169,7 +174,8 @@ private:
 
     double sumx, sumy, sumz;
 
-    int sonar_up_limit, sonar_down_limit, range_up, range_down;
+    int sonar_up_limit, sonar_down_limit;
+    double range_up, range_down;
 
     int countx, county, countz;
     bool goal_point , subgoal_point;
@@ -191,12 +197,14 @@ private:
     //void cameraCallback (const sensor_msgs::PointCloud2ConstPtr& input);
 
     void octoMapCallback(const octomap_msgs::OctomapConstPtr& msg);
+    void sonarupCallback (const sensor_msgs::RangeConstPtr& input);
+    void sonardownCallback (const sensor_msgs::RangeConstPtr& input);
 
     void goalPositionCallback(const geometry_msgs::Vector3ConstPtr& input);
     void robotPositionCallback(const geometry_msgs::PoseStampedConstPtr& input);
     void sphericalMatrixCallback(const std_msgs::Float32MultiArray::ConstPtr& matrix_msg);
     //double [60][120] sphericalMatrixCallback(const std_msgs::Float32MultiArray::ConstPtr& matrix_msg);
-    void sonarlimitsrangesCallback(const std_msgs::Int16MultiArray::ConstPtr& input);
+    //void sonarlimitsrangesCallback(const std_msgs::Int16MultiArray::ConstPtr& input);
     //void cameraCallback (const sensor_msgs::PointCloud2ConstPtr& input);
     bool isReachable(const Vector3d & direction);//geometry_msgs::Vector3 direction);//const geometry_msgs::Vector3ConstPtr& direction);
     float CylTest_CapsFirst(const Vector3d & dir_vec, float lengthsq, float radius_sq, float pdx, float pdy, float pdz);

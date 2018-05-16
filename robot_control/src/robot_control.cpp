@@ -107,6 +107,7 @@ void RobotControl::initializePublishers()
 
     pub_desired_position_ = nh_.advertise<geometry_msgs::PoseStamped>("/mavros/setpoint_position/local", 1, true);
     pub_desired_velocity_ = nh_.advertise<geometry_msgs::TwistStamped>("/mavros/setpoint_velocity/cmd_vel", 1, true);
+    pub_u_sol_cloud = nh_.advertise<sensor_msgs::PointCloud2>("/u_sol_cloud", 1, true);
 
 }
 
@@ -170,7 +171,7 @@ void RobotControl::usolCallback(const geometry_msgs::Vector3ConstPtr& input){
     // consider sending rather a goal point, so if it takes a long time to calculate the movement of the robot it won't suffer... 
     // or the length of the solution vector and calculate goal point here... 
 
-    if(u_sol[0] < 999){
+    if(u_sol[0] < 999 ){
         orm_control = true;
         initial_mode = false; 
         Vector3d robot_orientation_v(robot_orientation[0], robot_orientation[1], robot_orientation[2]);
@@ -182,6 +183,20 @@ void RobotControl::usolCallback(const geometry_msgs::Vector3ConstPtr& input){
 	    target_position[0] = robot_position[0] + u_sol_global[0];
 	    target_position[1] = robot_position[1] + u_sol_global[1];
 	    target_position[2] = robot_position[2] + u_sol_global[2];   
+
+        // Transform to point cloud to visualize in rviz:
+	    PointCloud::Ptr msg (new PointCloud);
+	    msg->header.frame_id = "base_link";
+	    msg->height = 1;
+	    msg->width = 1;
+
+	    msg->points.push_back (pcl::PointXYZ(u_sol[0], u_sol[1], u_sol[2]));
+
+	    // Convert to ROS data type
+	    sensor_msgs::PointCloud2 output;
+	    pcl::toROSMsg(*msg, output);
+	    // Publish the data
+	    pub_u_sol_cloud.publish (output);
     }
     else if(orm_control){
         // this happens only once when we are changing from orm control to non-orm control.
@@ -218,7 +233,7 @@ void RobotControl::robotPositionCallback(const geometry_msgs::PoseStampedConstPt
         if(distance_from_goal_point_squared < 0.09) {// if less than 30 cm from goal point...
             
             cout << "goal reached!" << endl;
-            double goal_yaw;
+            
             if(!goal_reached){
 
             	q[0] = robot_orientation[0];
@@ -228,6 +243,7 @@ void RobotControl::robotPositionCallback(const geometry_msgs::PoseStampedConstPt
             	tf2::Matrix3x3 m(q);
   				
   				m.getRPY(roll, pitch, goal_yaw);
+  				cout << "Goal yaw : " << goal_yaw  << "!!!!!!!!!!!!!!!!!!!!!!!!"<< endl;
                 goal_reached = true;
             }
 
@@ -252,6 +268,8 @@ void RobotControl::robotPositionCallback(const geometry_msgs::PoseStampedConstPt
 
             set_velocity.twist.angular.x = 0;
             set_velocity.twist.angular.y = 0;
+            //cout << "goal yaw: " << goal_yaw;
+
             set_velocity.twist.angular.z = (goal_yaw - yaw) * omega_max;
 
             // When using pose commands:
@@ -276,7 +294,7 @@ void RobotControl::robotPositionCallback(const geometry_msgs::PoseStampedConstPt
 
             
 
-            if(orm_control){
+            if(orm_control && abs(u_sol[0])+abs(u_sol[1])+abs(u_sol[2]) > 0.1 ){
                 // do the orm control
                 cout << "in orm control" << endl;
                 
@@ -333,8 +351,10 @@ void RobotControl::robotPositionCallback(const geometry_msgs::PoseStampedConstPt
 
                 // Let's try only turning or flying at each time, might work better:
                 
+                if(theta < -pi) theta  += 2*pi;
+                else if(theta > pi) theta -= 2*pi;
 
-                //cout << "theta: " << theta << endl;
+                //cout << "theta in orm: " << theta << endl;
                 if(abs(theta) > 10 * pi / 180 && abs(u_sol[2] / (abs(u_sol[0])+abs(u_sol[1])+abs(u_sol[2]))) < 0.85){
                     // turn the robot..
                     if(!orm_turn_mode){
@@ -404,6 +424,12 @@ void RobotControl::robotPositionCallback(const geometry_msgs::PoseStampedConstPt
                     */
 
                     //pub_desired_position_.publish(set_pose);
+
+                    // just so it can turn around if its supposed to turn 180 degrees:
+                    /*if(theta > pi - 0.3 && theta < pi+0.3 || theta > -pi - 0.3 && theta < -pi+0.3){
+                    	theta = 2.5; // just to turn in one direction..
+                    	cout << "now theta is 2.5" << endl; 
+                    }*/
 
                     omega = omega_max * theta / half_pi;
                 	set_velocity.twist.linear.x = fixed_position[0] - robot_position[0];
@@ -478,7 +504,7 @@ void RobotControl::robotPositionCallback(const geometry_msgs::PoseStampedConstPt
                          v *= sqrt(distance_from_goal_point_squared)/2+0.05;
                     }
                     cout << "nearest_obstacle_distance" << nearest_obstacle_distance << endl; 
-                    cout << "u_sol in control: " << u_sol  << "and v is: " << v << endl;
+                    //cout << "u_sol in control: " << u_sol  << endl; //<< "and v is: " << v << endl;
 
 
                     /*set_pose.pose.position.x = target_position[0];//robot_position[0]+ u_sol_global[0]*v;

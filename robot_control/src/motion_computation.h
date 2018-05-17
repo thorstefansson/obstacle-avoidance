@@ -90,11 +90,13 @@ private:
     ros::Publisher pub_selected_subgoal;
     ros::Publisher pub_u_sol;
     ros::Publisher pub_u_dom_cloud; // for publishing the u_dom that are used...
+    ros::Publisher pub_u_sol_cloud;
 
     //ros::Publisher pub_u_targ;
     // Target vector equals direction vector to goal point if it is rechable, 
     // otherwise the closest reachable sublgoal
-    ros::Publisher pub_target_vector;
+    //ros::Publisher pub_target_vector;
+    ros::Publisher pub_target_position;
     
     double val_from_subscriber_; //example member variable: better than using globals; convenient way to pass data from a subscriber to other member functions
     //double goal_position [3];
@@ -108,11 +110,15 @@ private:
 
     Vector3d goal_position, robot_position, direction_vector, subgoal_vector;
 
-    geometry_msgs::Vector3 target_vector, u_sol_vector;// u_targ_vector;
+    geometry_msgs::Vector3 target_vector, target_position_vector;//u_sol_vector;// u_targ_vector;
 
     //float goal_position[3], robot_position[3], direction_vector[3];
 
     float robot_orientation [4];
+
+    Vector3d robot_sphere_matrix_position;
+    float robot_sphere_matrix_orientation[4];
+
     //Vector3d direction;
 
     pcl::PointCloud<pcl::PointXYZ> camera_cloud;

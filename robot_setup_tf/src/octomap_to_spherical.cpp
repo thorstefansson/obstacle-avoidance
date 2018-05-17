@@ -424,6 +424,18 @@ void OctomapToSpherical::octoMapCallback(const octomap_msgs::OctomapConstPtr& oc
        //if (it.getSize() > 0.05 ) cout << "larger" ;
     }
 
+    // We want to publish the position and orientation of the robot at the time of this matrix being calculated to make accurate sub goal distance computations
+
+    // so let's allocate some space in the sphere matrix for that.. 
+    sphere_matrix[0][0] = robot_position[0];
+    sphere_matrix[0][1] = robot_position[1];
+    sphere_matrix[0][2] = robot_position[2];
+    sphere_matrix[0][3] = robot_orientation[0];
+    sphere_matrix[0][4] = robot_orientation[1];
+    sphere_matrix[0][5] = robot_orientation[2];
+    sphere_matrix[0][6] = robot_orientation[3];
+
+
         //---------------------------------Publish matrix to topic:-----------------------------------------
 
     std_msgs::Float32MultiArray dat;

@@ -69,12 +69,14 @@ private:
     // some objects to support subscriber, service, and publisher
     //ros::Subscriber minimal_subscriber_; //these will be set up within the class constructor, hiding these ugly details !!!!!!!!!!!!!!!!!!!!!!
     ros::Subscriber robot_position_sub_;
-    ros::Subscriber direction_vector_sub_;
+    //ros::Subscriber direction_vector_sub_;
     ros::Subscriber sonar_limits_and_ranges_sub_;
     ros::Subscriber occupancy_matrix_sub_;
-    ros::Subscriber u_sol_sub_;
+    //ros::Subscriber u_sol_sub_;
     ros::Subscriber goal_position_sub_;
-    ros::Publisher pub_u_sol_cloud;
+    ros::Subscriber target_position_sub_;
+    
+    //ros::Publisher pub_u_sol_cloud;
     //ros::Subscriber u_targ_sub_
 
     //ros::Subscriber camera_subscriber_;
@@ -115,6 +117,8 @@ private:
     float radius_sq;
     float diameter_sq;
 
+    int nearest_obstacle_distance_n, nearest_obstacle_distance_m;
+
     tf2::Quaternion q, q2;
     double roll, pitch, yaw;
 
@@ -150,7 +154,8 @@ private:
     //void directionVectorCallback(const geometry_msgs::Vector3ConstPtr& input);
     void robotPositionCallback(const geometry_msgs::PoseStampedConstPtr& input);
     void sphericalMatrixCallback(const std_msgs::Float32MultiArray::ConstPtr& matrix_msg);
-    void usolCallback(const geometry_msgs::Vector3ConstPtr& input);
+    //void usolCallback(const geometry_msgs::Vector3ConstPtr& input);
+    void targetPositionCallback(const geometry_msgs::Vector3ConstPtr& input);
     void goalPositionCallback(const geometry_msgs::Vector3ConstPtr& input);
     float vectorlength(const Vector3d & vec);
     //void utargCallback(const geometry_msgs::Vector3ConstPtr& input);

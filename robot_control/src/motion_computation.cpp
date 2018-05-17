@@ -25,7 +25,7 @@ MotionComputation::MotionComputation(ros::NodeHandle* nodehandle):nh_(*nodehandl
     camera_x_offset = 0.05;
     robot_radius = 0.2;
     robot_diameter = 0.4;
-    safety_distance = 0.3;
+    safety_distance = 0.4;
     max_sonar_range = 6;
     radius_sq = pow(robot_radius,2);
     diameter_sq = pow(robot_radius*2,2);
@@ -107,11 +107,14 @@ void MotionComputation::initializePublishers()
     pub_subgoal_cloud= nh_.advertise<sensor_msgs::PointCloud2>("subgoal_cloud", 1, true);
     pub_selected_subgoal = nh_.advertise<sensor_msgs::PointCloud2>("selected_subgoal", 1, true);
     pub_u_dom_cloud = nh_.advertise<sensor_msgs::PointCloud2>("/u_dom_cloud",1, true);
+    pub_u_sol_cloud = nh_.advertise<sensor_msgs::PointCloud2>("/u_sol_cloud", 1, true);
+
     
 
-    pub_desired_position_ = nh_.advertise<geometry_msgs::PoseStamped>("/mavros/setpoint_position/local", 1, true);
-    pub_target_vector = nh_.advertise<geometry_msgs::Vector3>("/target_position",1, true);
-    pub_u_sol = nh_.advertise<geometry_msgs::Vector3>("/u_sol",1, true);
+    //pub_desired_position_ = nh_.advertise<geometry_msgs::PoseStamped>("/mavros/setpoint_position/local", 1, true);
+    //pub_target_vector = nh_.advertise<geometry_msgs::Vector3>("/target_vector",1, true);
+    //pub_u_sol = nh_.advertise<geometry_msgs::Vector3>("/u_sol",1, true);
+    pub_target_position = nh_.advertise<geometry_msgs::Vector3>("/target_position",1, true);
 
 
     
@@ -381,6 +384,15 @@ void MotionComputation::sphericalMatrixCallback(const std_msgs::Float32MultiArra
 		cout << endl;
 	}*/	
 
+	robot_sphere_matrix_position[0] = sphere_matrix[0][0];
+	robot_sphere_matrix_position[1] = sphere_matrix[0][1];
+	robot_sphere_matrix_position[2] = sphere_matrix[0][2];
+
+	robot_sphere_matrix_orientation[0] = sphere_matrix[0][3];
+	robot_sphere_matrix_orientation[1] = sphere_matrix[0][4];
+	robot_sphere_matrix_orientation[2] = sphere_matrix[0][5];
+	robot_sphere_matrix_orientation[3] = sphere_matrix[0][6];
+
 
 	//-------------------Transform again to point cloud for visualizing in rviz:------------------------
 
@@ -474,9 +486,12 @@ void MotionComputation::sphericalMatrixCallback(const std_msgs::Float32MultiArra
 //*/
   	//Add sub goals for up / down ...
 
+  	// ---Here we only locate sub goals in the view of the camera and directly above and below the robot---
+  	// Maybe they should be located in more places.. 
+
   	if(goal_point){
   		// depending on the goal point and the range measurement up / down:
-  		double relative_height = goal_position[2] - robot_position[2];    //range_down
+  		double relative_height = goal_position[2] - robot_sphere_matrix_position[2];//robot_position[2];    //range_down
   		if(relative_height > 0){
   			//Locate sub goal above robot
   			if(relative_height < range_up +sonar_up_vertical_offset - robot_radius){
@@ -485,6 +500,14 @@ void MotionComputation::sphericalMatrixCallback(const std_msgs::Float32MultiArra
   			else{
   				// now the height is higher than we can clearly see with sonar
   				if(range_up+sonar_up_vertical_offset>robot_diameter) subgoal_matrix[M-1][0] = range_up + sonar_up_vertical_offset- robot_radius;
+  			}
+
+  			// Also locate some sub goal below robot ... 
+  			if(range_down - sonar_down_vertical_offset - robot_diameter > 1){
+  				subgoal_matrix[0][0] = 0.7;
+  			}
+  			else if(range_down - sonar_down_vertical_offset - robot_diameter > robot_diameter){
+  				subgoal_matrix[0][0] = (range_down - sonar_down_vertical_offset)/2;
   			}
   		}
   		else{
@@ -495,6 +518,14 @@ void MotionComputation::sphericalMatrixCallback(const std_msgs::Float32MultiArra
   			else{
   				// now the height is higher than we can clearly see with sonar
   				if(range_down-sonar_down_vertical_offset>robot_diameter) subgoal_matrix[0][0] = range_down - sonar_down_vertical_offset - robot_radius;
+  			}
+
+  			// Also locate some sub goal above robot ... 
+  			if(range_up + sonar_up_vertical_offset - robot_diameter > 1){
+  				subgoal_matrix[M-1][0] = 0.7;
+  			}
+  			else if(range_up + sonar_up_vertical_offset - robot_diameter > robot_diameter){
+  				subgoal_matrix[M-1][0] = (range_up + sonar_up_vertical_offset)/2;
   			}
   		}
   	}
@@ -516,12 +547,18 @@ void MotionComputation::sphericalMatrixCallback(const std_msgs::Float32MultiArra
   	// ok, have to rewrite most of this shit:
 
   	//Lets just check within vertical field of camera.. 
-  	int m_min = M * 28/60;
-  	int m_max = M * 40/60;
+  	//int m_min = M * 28/60;
+  	//int m_max = M * 40/60;
+  	
+  	//max is like 27-41 for M = 60
+  	int m_min = M * 15/60;
+  	int m_max = M * 45/60;
+
+
   	//cout << "m min " << m_min << " m max " << m_max << " M " << M << endl;
   	// or we could omit sub goals where there is unknown in the octomap.. 
 	for( m = m_min ; m < m_max ; m++){  //max is like 27-41 for M = 60
-		for( n = 0; n< N-1 ; n++){ //and 50 - 68 for N = 120
+		for( n = 0; n< N ; n++){ //and 50 - 68 for N = 120
 
 			//To make sure we're not on the edge of view of the camera:
 			//if(sphere_matrix[m][n] != 0){//robot_radius + safety_distance){
@@ -712,7 +749,7 @@ void MotionComputation::goalPositionCallback(const geometry_msgs::Vector3ConstPt
 	*/
 	//cout<<"here 1"<< endl;
 
-	direction_vector = goal_position - robot_position;
+	direction_vector = goal_position - robot_sphere_matrix_position;//robot_position;
     goal_point = true;
     bool nothing_reachable = false;
 
@@ -784,7 +821,7 @@ void MotionComputation::goalPositionCallback(const geometry_msgs::Vector3ConstPt
         if( check_this < 0.53 && check_this > 0.47) yaw = 2 * atan2(robot_orientation[0],robot_orientation[3]);
         else if(check_this > -0.53 && check_this < -0.47) yaw = -2 * atan2(robot_orientation[0],robot_orientation[3]);*/
 
-        tf2::Quaternion q;
+        /*tf2::Quaternion q;
     	q[0] = robot_orientation[0];
     	q[1] = robot_orientation[1];
     	q[2] = robot_orientation[2];
@@ -793,15 +830,12 @@ void MotionComputation::goalPositionCallback(const geometry_msgs::Vector3ConstPt
 		double roll, pitch, yaw;
 		mat.getRPY(roll, pitch, yaw);
 
-
-
-
         //double yaw = atan2(2.0*(robot_orientation[1]*robot_orientation[2] + robot_orientation[3]*robot_orientation[0]), robot_orientation[3]*robot_orientation[3] - robot_orientation[0]*robot_orientation[0] - 
         //	robot_orientation[1]*robot_orientation[1] + robot_orientation[2]*robot_orientation[2]);
 
         //cout <<" here " << endl;
 
-        cout << "yaw: " << yaw << " theta: " << theta <<endl;
+        cout << "yaw: " << yaw << " theta: " << theta <<endl;*/
 
         /*if((abs(z_turn - robot_orientation[2]) + abs(w_turn - robot_orientation[3])  < 0.05 
         	|| abs(z_turn + robot_orientation[2]) + abs(w_turn + robot_orientation[3]) < 0.05)
@@ -850,10 +884,14 @@ void MotionComputation::goalPositionCallback(const geometry_msgs::Vector3ConstPt
 
             Vector3d subgoal_global_frame, subgoal_robot_frame, robot_orientation_v;
             float robot_orientation_w;
-            robot_orientation_v [0] = robot_orientation[0];
+            /*robot_orientation_v [0] = robot_orientation[0];
             robot_orientation_v [1] = robot_orientation[1];
             robot_orientation_v [2] = robot_orientation[2];
-            robot_orientation_w = robot_orientation[3];
+            robot_orientation_w = robot_orientation[3];*/
+            robot_orientation_v [0] = robot_sphere_matrix_orientation[0];
+            robot_orientation_v [1] = robot_sphere_matrix_orientation[1];
+            robot_orientation_v [2] = robot_sphere_matrix_orientation[2];
+            robot_orientation_w = robot_sphere_matrix_orientation[3];
 
 
 
@@ -892,22 +930,30 @@ void MotionComputation::goalPositionCallback(const geometry_msgs::Vector3ConstPt
                         2*cross(robot_orientation_v, cross(robot_orientation_v, subgoal_robot_frame));
 
                         
-                        z2 = subgoal_global_frame[2]+robot_position[2];
-                        
+                        //z2 = subgoal_global_frame[2]+robot_position[2];
+						z2 = subgoal_global_frame[2]+robot_sphere_matrix_position[2];
+                                                
 
                         if(z2 > 0.1){
                         	//this means it is at least 10 cm above ground..
 
-                        	x2 = subgoal_global_frame[0]+robot_position[0];
-                        	y2 = subgoal_global_frame[1]+robot_position[1];
+                        	//x2 = subgoal_global_frame[0]+robot_position[0];
+                        	//y2 = subgoal_global_frame[1]+robot_position[1];
+                        	x2 = subgoal_global_frame[0]+robot_sphere_matrix_position[0];
+                        	y2 = subgoal_global_frame[1]+robot_sphere_matrix_position[1];
                         	
                         	// store matrix value
                         	double distance_sq = pow(goal_position[0] - x2,2) +
                         	pow(goal_position[1] - y2, 2) +
                         	pow(goal_position[2] - z2, 2);
 
+
+							// Change this if you don't want to account for rotation: !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+                        	// try adding one 1cm for each n maybe to account for rotation as well...
+                        	double distance = sqrt ( distance_sq) + 0.01* abs(n - N/2);
+
                         	//now push back to vector..
-	                        distance_index_vector.push_back(make_pair(distance_sq, countx));
+	                        distance_index_vector.push_back(make_pair(distance, countx));
 	                        // push back the m and n values as well..
 	                        //matrix_indices_vector.push_back(make_pair(m,n));
 
@@ -938,6 +984,9 @@ void MotionComputation::goalPositionCallback(const geometry_msgs::Vector3ConstPt
             //cout << "here" << endl;
 
             // sort stuff
+            // there should also be a penalty for choosing a sub goal that is only a little closer to the goal but we have to turn the robot a lot...
+            // since without such a penalty we can end up switching between sub goals with very different directions but around the same distance to the goal
+            // which makes us turn back and forth but never fly straight... 
             sort(distance_index_vector.begin(), distance_index_vector.end(), comparator());
 
 
@@ -992,7 +1041,7 @@ void MotionComputation::goalPositionCallback(const geometry_msgs::Vector3ConstPt
 		    		target_vector.y = subgoal_xyz[distance_index_vector[vecitr].second][6];
 		    		target_vector.z = subgoal_xyz[distance_index_vector[vecitr].second][7];
 
-		    		pub_target_vector.publish(target_vector);
+		    		//pub_target_vector.publish(target_vector);
 
 		    		subgoal_point = true;
 
@@ -1010,7 +1059,7 @@ void MotionComputation::goalPositionCallback(const geometry_msgs::Vector3ConstPt
     		target_vector.y = direction_vector[1];
     		target_vector.z = direction_vector[2];
 
-    		pub_target_vector.publish(target_vector);
+    		//pub_target_vector.publish(target_vector);
 
     		subgoal_point = false;
     	}
@@ -1042,7 +1091,7 @@ void MotionComputation::goalPositionCallback(const geometry_msgs::Vector3ConstPt
 	    // to get rid of drift, set fixed position:
     }
     else{
-    	// subgoal is over or under robot
+    	// Goal is over or under robot
     	bool reachable;
         
         double theta = acos(direction_vector[0]/xy_length_of_direction_vector);
@@ -1065,10 +1114,10 @@ void MotionComputation::goalPositionCallback(const geometry_msgs::Vector3ConstPt
 
             Vector3d subgoal_global_frame, subgoal_robot_frame, robot_orientation_v;
             float robot_orientation_w;
-            robot_orientation_v [0] = robot_orientation[0];
-            robot_orientation_v [1] = robot_orientation[1];
-            robot_orientation_v [2] = robot_orientation[2];
-            robot_orientation_w = robot_orientation[3];
+            robot_orientation_v [0] = robot_sphere_matrix_orientation[0];
+            robot_orientation_v [1] = robot_sphere_matrix_orientation[1];
+            robot_orientation_v [2] = robot_sphere_matrix_orientation[2];
+            robot_orientation_w = robot_sphere_matrix_orientation[3];
 
 
 
@@ -1107,22 +1156,28 @@ void MotionComputation::goalPositionCallback(const geometry_msgs::Vector3ConstPt
                         2*cross(robot_orientation_v, cross(robot_orientation_v, subgoal_robot_frame));
 
                         
-                        z2 = subgoal_global_frame[2]+robot_position[2];
+                        z2 = subgoal_global_frame[2]+robot_sphere_matrix_position[2];
                         
 
                         if(z2 > 0.1){
                         	//this means it is at least 10 cm above ground..
 
-                        	x2 = subgoal_global_frame[0]+robot_position[0];
-                        	y2 = subgoal_global_frame[1]+robot_position[1];
+                        	x2 = subgoal_global_frame[0]+robot_sphere_matrix_position[0];
+                        	y2 = subgoal_global_frame[1]+robot_sphere_matrix_position[1];
                         	
                         	// store matrix value
                         	double distance_sq = pow(goal_position[0] - x2,2) +
                         	pow(goal_position[1] - y2, 2) +
                         	pow(goal_position[2] - z2, 2);
+							
+							// Change this if you don't want to account for rotation: !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+							// try adding one 1cm for each n maybe to account for rotation as well...
+                        	double distance = sqrt ( distance_sq) + 0.01* abs(n - N/2);
 
                         	//now push back to vector..
-	                        distance_index_vector.push_back(make_pair(distance_sq, countx));
+	                        distance_index_vector.push_back(make_pair(distance, countx));
+	                        
+
 	                        // push back the m and n values as well..
 	                        //matrix_indices_vector.push_back(make_pair(m,n));
 
@@ -1153,6 +1208,7 @@ void MotionComputation::goalPositionCallback(const geometry_msgs::Vector3ConstPt
             //cout << "here" << endl;
 
             // sort stuff
+            // maybe account for orientation as well
             sort(distance_index_vector.begin(), distance_index_vector.end(), comparator());
 
 
@@ -1207,7 +1263,7 @@ void MotionComputation::goalPositionCallback(const geometry_msgs::Vector3ConstPt
 		    		target_vector.y = subgoal_xyz[distance_index_vector[vecitr].second][6];
 		    		target_vector.z = subgoal_xyz[distance_index_vector[vecitr].second][7];
 
-		    		pub_target_vector.publish(target_vector);
+		    		//pub_target_vector.publish(target_vector);
 
 		    		subgoal_point = true;
 
@@ -1225,7 +1281,7 @@ void MotionComputation::goalPositionCallback(const geometry_msgs::Vector3ConstPt
     		target_vector.y = direction_vector[1];
     		target_vector.z = direction_vector[2];
 
-    		pub_target_vector.publish(target_vector);
+    		//pub_target_vector.publish(target_vector);
 
     		subgoal_point = false;
     	}
@@ -1260,14 +1316,23 @@ void MotionComputation::goalPositionCallback(const geometry_msgs::Vector3ConstPt
 		    	Vector3d robot_orientation_inverse_v;
 		        float robot_orientation_inverse_w;
 
-		        float robot_orientation_sum_squared = pow(robot_orientation[0],2) + pow(robot_orientation[1],2) + pow(robot_orientation[2],2)
+		        /*float robot_orientation_sum_squared = pow(robot_orientation[0],2) + pow(robot_orientation[1],2) + pow(robot_orientation[2],2)
 		        +pow(robot_orientation[3],2);
 
 		        robot_orientation_inverse_w = robot_orientation[3] / robot_orientation_sum_squared;
 
 		        robot_orientation_inverse_v[0] = -robot_orientation[0] / robot_orientation_sum_squared;
 		        robot_orientation_inverse_v[1] = -robot_orientation[1] / robot_orientation_sum_squared;
-		        robot_orientation_inverse_v[2] = -robot_orientation[2] / robot_orientation_sum_squared;
+		        robot_orientation_inverse_v[2] = -robot_orientation[2] / robot_orientation_sum_squared;*/
+
+		        float robot_orientation_sum_squared = pow(robot_sphere_matrix_orientation[0],2) + pow(robot_sphere_matrix_orientation[1],2) + pow(robot_sphere_matrix_orientation[2],2)
+		        +pow(robot_sphere_matrix_orientation[3],2);
+
+		        robot_orientation_inverse_w = robot_sphere_matrix_orientation[3] / robot_orientation_sum_squared;
+
+		        robot_orientation_inverse_v[0] = -robot_sphere_matrix_orientation[0] / robot_orientation_sum_squared;
+		        robot_orientation_inverse_v[1] = -robot_sphere_matrix_orientation[1] / robot_orientation_sum_squared;
+		        robot_orientation_inverse_v[2] = -robot_sphere_matrix_orientation[2] / robot_orientation_sum_squared;
 
 		        target_direction = direction_vector + 2*robot_orientation_inverse_w*cross(robot_orientation_inverse_v, direction_vector) +
 		        2*cross(robot_orientation_inverse_v, cross(robot_orientation_inverse_v, direction_vector));
@@ -1383,12 +1448,12 @@ void MotionComputation::goalPositionCallback(const geometry_msgs::Vector3ConstPt
 
 			
 			// Iterate over spherical matrix to find S2 and n_D vectors for each quarter:
-			int m_temp_min;
-			if(range_down < 0.1){
+			int m_temp_min=1;
+			/*if(range_down < 0.1){
 				m_temp_min = 0; // to get rid of shit values at m = 0
 				cout << "range_down: " << range_down << endl;	
 			} 
-			else m_temp_min= 1;
+			else m_temp_min= 1;*/
 
 
 
@@ -1398,7 +1463,7 @@ void MotionComputation::goalPositionCallback(const geometry_msgs::Vector3ConstPt
 					// check if obstacle is present in the direction, 
 					// and at a shorter distance than the distance to the goal + robot diameter:
 					// this is to make sure the robot doesn't count a wall behind the target as an obstacle
-					if (sphere_matrix[m][n] != 0  && sphere_matrix[m][n] < target_distance + robot_diameter){
+					if (sphere_matrix[m][n] != 0  && sphere_matrix[m][n] < target_distance + robot_radius){ // maybe should use robot_diameter instead of robot_radius here
 						//find u_obst, unitary vector in obstacle direction ...
 						phi = m * pi / M - pi/2;
 						theta = n *  pi / M - pi;
@@ -2322,12 +2387,16 @@ void MotionComputation::goalPositionCallback(const geometry_msgs::Vector3ConstPt
 
 				// target direction belongs to all four sets of motion constraints..
 				cout << "target direction belongs to all 4 sets of motion constraints" << endl;
-				Vector3d u_TR_DL_dom, u_TL_DR_dom, n_E, n_F;
-				u_TR_DL_dom = (u_TR_dom + u_DL_dom) / 2;
+				/*Vector3d u_TR_DL_dom, u_TL_DR_dom, n_E, n_F;
+				
 				u_TL_DR_dom = (u_DR_dom + u_TL_dom) / 2;
+				u_TR_DL_dom = (u_TR_dom + u_DL_dom) / 2;
 				n_E = cross(cross(u_TL_dom, u_DR_dom), u_TL_DR_dom);
 				n_F = cross(cross(u_TR_dom, u_DL_dom), u_TR_DL_dom);
-				u_sol = cross(n_E, n_F);
+				u_sol = cross(n_E, n_F);*/
+
+				// Try using medium value instead:
+				u_sol = (u_DR_dom + u_TL_dom + u_TR_dom + u_DL_dom) / 4;
 			}
 
 			//cout << "u_sol : " << u_sol << endl;
@@ -2360,10 +2429,45 @@ void MotionComputation::goalPositionCallback(const geometry_msgs::Vector3ConstPt
     	u_sol[2] = 0;
     }
 
-    u_sol_vector.x = u_sol[0];
+    //publish u sol rather as a global position since robot may have shifted in orientation / location
+
+    /*u_sol_vector.x = u_sol[0];
     u_sol_vector.y = u_sol[1];
     u_sol_vector.z = u_sol[2];
-    pub_u_sol.publish(u_sol_vector);
+
+    pub_u_sol.publish(u_sol_vector);*/
+
+
+    Vector3d robot_orientation_v(robot_sphere_matrix_orientation[0], robot_sphere_matrix_orientation[1], robot_sphere_matrix_orientation[2]);
+    float robot_orientation_w = robot_sphere_matrix_orientation[3];
+
+    Vector3d u_sol_global;
+    u_sol_global = u_sol + 2*robot_orientation_w*cross(robot_orientation_v, u_sol) +
+    2*cross(robot_orientation_v, cross(robot_orientation_v, u_sol));
+	Vector3d target_position;
+    target_position[0] = robot_position[0] + u_sol_global[0];
+    target_position[1] = robot_position[1] + u_sol_global[1];
+    target_position[2] = robot_position[2] + u_sol_global[2];   
+
+    target_position_vector.x = target_position[0];
+    target_position_vector.y = target_position[1];
+    target_position_vector.z = target_position[2];
+
+    pub_target_position.publish(target_position_vector);
+
+    // Transform to point cloud to visualize in rviz:
+    PointCloud::Ptr msg (new PointCloud);
+    msg->header.frame_id = "/world";
+    msg->height = 1;
+    msg->width = 1;
+
+    msg->points.push_back (pcl::PointXYZ(target_position[0], target_position[1], target_position[2]));
+
+    // Convert to ROS data type
+    sensor_msgs::PointCloud2 output;
+    pcl::toROSMsg(*msg, output);
+    // Publish the data
+    pub_u_sol_cloud.publish (output);
 
 }
 
@@ -2602,12 +2706,18 @@ bool MotionComputation::isReachable(const Vector3d & direction){
 	float robot_bbx_corner [3] , goal_bbx_corner[3];
 	
 	//2*(signbit(direction[0]) - 0.5) * robot_diameter;
-	robot_bbx_corner [0] = - ((direction[0] > 0) - (direction[0] < 0)) * robot_diameter +robot_position[0];
+	/*robot_bbx_corner [0] = - ((direction[0] > 0) - (direction[0] < 0)) * robot_diameter +robot_position[0];
 	robot_bbx_corner [1] = - ((direction[1] > 0) - (direction[1] < 0)) * robot_diameter + robot_position[1];
 	robot_bbx_corner [2] = - ((direction[2] > 0) - (direction[2] < 0)) * robot_diameter + robot_position[2];
 	goal_bbx_corner [0] = ((direction[0] > 0) - (direction[0] < 0)) * robot_diameter + direction[0] + robot_position[0];
 	goal_bbx_corner [1] = ((direction[1] > 0) - (direction[1] < 0)) * robot_diameter + direction[1] + robot_position[1];
-	goal_bbx_corner [2] = ((direction[2] > 0) - (direction[2] < 0)) * robot_diameter + direction[2] + robot_position[2];
+	goal_bbx_corner [2] = ((direction[2] > 0) - (direction[2] < 0)) * robot_diameter + direction[2] + robot_position[2];*/
+	robot_bbx_corner [0] = - ((direction[0] > 0) - (direction[0] < 0)) * robot_diameter +robot_sphere_matrix_position[0];
+	robot_bbx_corner [1] = - ((direction[1] > 0) - (direction[1] < 0)) * robot_diameter + robot_sphere_matrix_position[1];
+	robot_bbx_corner [2] = - ((direction[2] > 0) - (direction[2] < 0)) * robot_diameter + robot_sphere_matrix_position[2];
+	goal_bbx_corner [0] = ((direction[0] > 0) - (direction[0] < 0)) * robot_diameter + direction[0] + robot_sphere_matrix_position[0];
+	goal_bbx_corner [1] = ((direction[1] > 0) - (direction[1] < 0)) * robot_diameter + direction[1] + robot_sphere_matrix_position[1];
+	goal_bbx_corner [2] = ((direction[2] > 0) - (direction[2] < 0)) * robot_diameter + direction[2] + robot_sphere_matrix_position[2];
 	for(int i = 0; i < 3; i++){
 		if(robot_bbx_corner[i] == 0){
 			robot_bbx_corner[i] = - robot_diameter;
@@ -2630,7 +2740,9 @@ bool MotionComputation::isReachable(const Vector3d & direction){
     	if(it->getValue() > 0 ){
             // Node is occupied 
     		// check if within diameter distance..
-    		x=it.getX() - robot_position[0]; y=it.getY() - robot_position[1]; z=it.getZ() - robot_position[2];
+    		//x=it.getX() - robot_position[0]; y=it.getY() - robot_position[1]; z=it.getZ() - robot_position[2];
+    		x=it.getX() - robot_sphere_matrix_position[0]; y=it.getY() - robot_sphere_matrix_position[1]; z=it.getZ() - robot_sphere_matrix_position[2];
+    		
     		iswithin = CylTest_CapsFirst(direction, length_of_direction_vector_robot_width_sq, diameter_sq, x,y,z);
 
 

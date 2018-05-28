@@ -26,9 +26,11 @@ RobotControl::RobotControl(ros::NodeHandle* nodehandle):nh_(*nodehandle)
     sonar_down_vertical_offset = -0.05;
     max_camera_range = 10; //it's actually 1.4 m but 10m cameras exist...
     camera_x_offset = 0.05;
-    robot_radius = 0.2;
-    robot_diameter = 0.4;
-    safety_distance = 0.3;
+    // robot_radius = 0.35;//0.4;
+    // robot_diameter = 0.7;//0.8;
+    robot_radius = 0.4;
+    robot_diameter = 0.8;
+    safety_distance = 0.4;
     max_sonar_range = 6;
     radius_sq = pow(robot_radius,2);
     diameter_sq = pow(robot_radius*2,2);
@@ -106,7 +108,6 @@ void RobotControl::initializePublishers()
 {
     ROS_INFO("Initializing Publishers");
     //minimal_publisher_ = nh_.advertise<std_msgs::Float32>("exampleMinimalPubTopic", 1, true); 
-
     pub_desired_position_ = nh_.advertise<geometry_msgs::PoseStamped>("/mavros/setpoint_position/local", 1, true);
     pub_desired_velocity_ = nh_.advertise<geometry_msgs::TwistStamped>("/mavros/setpoint_velocity/cmd_vel", 1, true);
     //pub_u_sol_cloud = nh_.advertise<sensor_msgs::PointCloud2>("/u_sol_cloud", 1, true);
@@ -135,7 +136,7 @@ void RobotControl::sphericalMatrixCallback(const std_msgs::Float32MultiArray::Co
     for (m = 1; m< M ; m++){ // to get rid of some shit values at m=1 ...
         for (n = 0; n< N ; n++){
             //sphere_matrix[m][n] = matrix_msg->data[m*dstride1 + n];
-            if(matrix_msg->data[m*dstride1 + n] < nearest_obstacle_distance && matrix_msg->data[m*dstride1 + n] != 0) {
+            if(matrix_msg->data[m*dstride1 + n] < nearest_obstacle_distance && matrix_msg->data[m*dstride1 + n] > 0 ) {
                 nearest_obstacle_distance = matrix_msg->data[m*dstride1 + n];
                 nearest_obstacle_distance_n = n;
                 nearest_obstacle_distance_m = m;
@@ -320,7 +321,7 @@ void RobotControl::robotPositionCallback(const geometry_msgs::PoseStampedConstPt
 
             
 
-            if(orm_control && abs(direction_vector[0])+abs(direction_vector[1])+abs(direction_vector[2]) > 0.2 ){
+            if(orm_control && (abs(direction_vector[0])+abs(direction_vector[1])+abs(direction_vector[2]) > 0.2 || abs(direction_vector[2] / (abs(direction_vector[0])+abs(direction_vector[1])+abs(direction_vector[2]))) > 0.85)){
                 // do the orm control
                 cout << "in orm control" << endl;
                 
@@ -381,7 +382,7 @@ void RobotControl::robotPositionCallback(const geometry_msgs::PoseStampedConstPt
                 else if(theta > pi) theta -= 2*pi;
 
 
-               	if(nearest_obstacle_distance < robot_radius + 0.15){
+               	if(nearest_obstacle_distance < robot_radius + 0.10){
                		// very close to obstacle, fly in opposite direction.. 
                		set_velocity.header.frame_id = "base_link";
                     set_velocity.header.stamp = ros::Time::now();

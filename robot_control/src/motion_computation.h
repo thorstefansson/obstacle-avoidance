@@ -144,6 +144,7 @@ private:
     float diameter_sq;
     double cspace_resolution;
     int cspace_width, cspace_half_width;
+    int m_min, m_max;
     
     int Cspaceframe_activepoints;
     
@@ -163,9 +164,22 @@ private:
     double sphere_matrix [30][60];
     double subgoal_matrix[30][60];
     double unitary_direction_vectors_matrix [30][60][3];
-    // For 5 cm resolution:
-    int sphere_model[4][4][4];
-    int Cspaceframe[8][8], n_radius;
+   
+    // For 5 cm resolution and 20 cm robot radius:
+    //int sphere_model[4][4][4];
+    //int Cspaceframe[8][8], n_radius;
+    // and 30cm robot radius:
+    /*int sphere_model[6][6][6];
+    int Cspaceframe[12][12], n_radius;*/
+     // and 35cm robot radius:
+    //int sphere_model[7][7][7];
+    //int Cspaceframe[14][14], n_radius;
+    // and 40 cm robot radius:
+    int sphere_model[8][8][8];
+    int Cspaceframe[16][16], n_radius;
+
+
+
 
     int M,N, spherical_matrix_degree_resolution, m, n;
 
@@ -175,6 +189,8 @@ private:
     geometry_msgs::PoseStamped set_pose;
 
     octomap::OcTree* tree;
+
+    double octomap_resolution;
 
     bool target_calculated;
 

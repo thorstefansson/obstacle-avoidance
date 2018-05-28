@@ -23,8 +23,12 @@ MotionComputation::MotionComputation(ros::NodeHandle* nodehandle):nh_(*nodehandl
     sonar_down_vertical_offset = -0.05;
     max_camera_range = 10; //it's actually 1.4 m but 10m cameras exist...
     camera_x_offset = 0.05;
-    robot_radius = 0.2;
-    robot_diameter = 0.4;
+    // size of simulated uav: 72.6? cm
+    //robot_radius = 0.35;//0.4;//0.2;
+    //robot_diameter = 0.7;//0.8;
+	robot_radius = 0.4;//0.2;
+    robot_diameter = 0.8;
+
     safety_distance = 0.4;
     max_sonar_range = 6;
     radius_sq = pow(robot_radius,2);
@@ -35,15 +39,18 @@ MotionComputation::MotionComputation(ros::NodeHandle* nodehandle):nh_(*nodehandl
     spherical_matrix_width = 360/spherical_matrix_degree_resolution;
 	M = spherical_matrix_height;//180/spherical_matrix_degree_resolution;
     N = spherical_matrix_width;//360/spherical_matrix_degree_resolution;
+    //cout << "M: " << M << "N: " << N << endl;
+
 
     subgoal_point = false;
     Cspaceframe_activepoints = 0;
     goal_point = false;
 
-    cspace_resolution = 0.05; // meters
+    cspace_resolution = 0.1; // meters
     cspace_width = ceil(robot_diameter / cspace_resolution);
     cspace_half_width = ceil(robot_radius / cspace_resolution);
-	n_radius = robot_radius/ cspace_resolution;
+	n_radius = ceil(robot_radius/ cspace_resolution);
+	cout << "cspace_width: " << cspace_width << " cspace_half_width: " << cspace_half_width << " n_radius: " << n_radius << endl;
 
     //robot_radius / cspace_resolution;
     // for robot radius 0.2 and cspace_rosolution 0.02 n_radius is 10
@@ -56,11 +63,13 @@ MotionComputation::MotionComputation(ros::NodeHandle* nodehandle):nh_(*nodehandl
     sonar_down_limit = 6;
     range_down = 0;
 
+    octomap_resolution = 0.1;
+
     cout <<"Going into initialize Sphere function" << endl;
     initializeSphere();
     cout <<"done running initializeSphere" << endl;
     initializeUnitaryVectors();
-
+    cout <<"done running initializeUnitaryVectors" << endl;
 
     // can also do tests/waits to make sure all required services, topics, etc are alive
 }
@@ -272,6 +281,13 @@ void MotionComputation::initializeSphere()
 		ivalue += cspace_resolution;
 	}
 
+	/*int min_val;
+    if (n_radius % 2 == 0){
+        // even number
+        min_val = 1;
+    }
+    else min_val = 0;*/
+	
 	for( int j = 0 ; j <n_radius; j++){
 		for(int k=j ; k<n_radius; k++){
 			jvalue = cspace_resolution*(j+1);
@@ -306,17 +322,18 @@ void MotionComputation::initializeSphere()
 
 	// When active points is different:
 
-        //let's write out the sphere model:
-        /*
-        for (int i = 0 ; i < n_radius ; i++){
-                for ( int j = 0 ; j < n_radius ; j++){
-                        for (int k = 0 ; k < n_radius; k ++){
-                            cout << sphere_model[i][j][k];
-                        }
-                        cout << endl;
+    //let's write out the sphere model:
+    
+    cout << "sphere model in motion computation" << endl;
+    for (int i = 0 ; i < n_radius ; i++){
+        for ( int j = 0 ; j < n_radius ; j++){
+                for (int k = 0 ; k < n_radius; k ++){
+                    cout << sphere_model[i][j][k];
                 }
-                cout<< endl << endl;
-        }*/
+                cout << endl;
+        }
+        cout<< endl << endl;
+    }
 
 	//lets write out our frame:
 
@@ -351,6 +368,10 @@ void MotionComputation::sphericalMatrixCallback(const std_msgs::Float32MultiArra
 
 	//cout << "in sphericalMatrixCallback" <<  endl;
 
+	//cout << "xy distance from origin is: " << sqrt(pow(robot_position[0],2) + pow(robot_position[1],2)) << endl;
+
+
+
 	float dstride0 = matrix_msg->layout.dim[0].stride;
 	float dstride1 = matrix_msg->layout.dim[1].stride;
 	/*float h = matrix_msg->layout.dim[0].size;
@@ -371,7 +392,13 @@ void MotionComputation::sphericalMatrixCallback(const std_msgs::Float32MultiArra
 	for (m = 0; m< M ; m++){
 		for (n = 0; n< N ; n++){
 			sphere_matrix[m][n] = matrix_msg->data[m*dstride1 + n];
-			subgoal_matrix[m][n] = 0;
+			//subgoal_matrix[m][n] = 0;
+			} 
+	}
+	for (m = M; m< 2*M ; m++){
+		for (n = 0; n< N ; n++){
+			subgoal_matrix[m-M][n] = matrix_msg->data[m*dstride1 + n];
+			//subgoal_matrix[m][n] = 0;
 			} 
 	}
 
@@ -490,7 +517,62 @@ void MotionComputation::sphericalMatrixCallback(const std_msgs::Float32MultiArra
   	// Maybe they should be located in more places.. 
 
   	if(goal_point){
-  		// depending on the goal point and the range measurement up / down:
+  		
+  		// Locate subgoals directly up / down depending on sub goals located outside the view of the camera:
+  		//max is like 27-41 for M = 60 for the camera view
+  		double relative_height = goal_position[2] - robot_sphere_matrix_position[2];
+  		double closest_subgoal_distance =1000000;
+
+  		m_min = 40*M/60;
+  		
+  		for(m = m_min; m<M; m ++){
+  			for (n = 0; n < N; n++){
+  				// check if sub goal
+  				if(subgoal_matrix[m][n] > 0){
+  					phi = m * pi / M - pi/2;
+                    theta = n *  pi / M - pi;
+             
+                    rho = subgoal_matrix[m][n];
+                    r = rho * cos(phi);
+                    //x = r * cos(theta);
+                    //y = r * sin(theta);
+                    z = rho * sin(phi);
+                    if(abs(z - relative_height) < closest_subgoal_distance && z < range_up +sonar_up_vertical_offset - robot_radius){
+                    	subgoal_matrix[M-1][0] = z;
+                    	closest_subgoal_distance = abs(z - relative_height);	
+                    }
+                    subgoal_matrix[m][n] = 0;
+  				}
+  			}
+  		}
+  		m_max = 20*M/60;
+  		for(m = 1; m< m_max; m ++){
+  			for (n = 0; n < N; n++){
+  				// check if sub goal
+  				if(subgoal_matrix[m][n] > 0){
+  					phi = m * pi / M - pi/2;
+                    theta = n *  pi / M - pi;
+             
+                    rho = subgoal_matrix[m][n];
+                    r = rho * cos(phi);
+                    //x = r * cos(theta);
+                    //y = r * sin(theta);
+                    z = rho * sin(phi);
+                    if(abs(z - relative_height) < closest_subgoal_distance && abs(z) < range_down - sonar_down_vertical_offset - robot_radius){
+                    	subgoal_matrix[0][0] = z;
+                    	closest_subgoal_distance = abs(z - relative_height);	
+                    }
+                    subgoal_matrix[m][n] = 0;
+
+  				}
+  			}
+  		}
+
+  		cout << "m_min: " << m_min << " m_max: " << m_max << " M: " << M; 
+
+
+
+  		/*// depending on the goal point and the range measurement up / down:
   		double relative_height = goal_position[2] - robot_sphere_matrix_position[2];//robot_position[2];    //range_down
   		if(relative_height > 0){
   			//Locate sub goal above robot
@@ -527,7 +609,7 @@ void MotionComputation::sphericalMatrixCallback(const std_msgs::Float32MultiArra
   			else if(range_up + sonar_up_vertical_offset - robot_diameter > robot_diameter){
   				subgoal_matrix[M-1][0] = (range_up + sonar_up_vertical_offset)/2;
   			}
-  		}
+  		}*/
   	}
 
   	//Now let's add stuff for the camera view... :
@@ -550,15 +632,16 @@ void MotionComputation::sphericalMatrixCallback(const std_msgs::Float32MultiArra
   	//int m_min = M * 28/60;
   	//int m_max = M * 40/60;
   	
+  	// --------------To locate sub goals exactly on the boundary: -----------------
+/*
   	//max is like 27-41 for M = 60
   	int m_min = M * 15/60;
   	int m_max = M * 45/60;
 
-
   	//cout << "m min " << m_min << " m max " << m_max << " M " << M << endl;
   	// or we could omit sub goals where there is unknown in the octomap.. 
 	for( m = m_min ; m < m_max ; m++){  //max is like 27-41 for M = 60
-		for( n = 0; n< N ; n++){ //and 50 - 68 for N = 120
+		for( n = 0; n< N-1 ; n++){ //and 50 - 68 for N = 120
 
 			//To make sure we're not on the edge of view of the camera:
 			//if(sphere_matrix[m][n] != 0){//robot_radius + safety_distance){
@@ -574,6 +657,7 @@ void MotionComputation::sphericalMatrixCallback(const std_msgs::Float32MultiArra
 				cout << "sphere_matrix[m][n]: " << sphere_matrix[m][n] <<  endl;
 				statement = sphere_matrix[m][n] - (camera_x_offset + max_camera_range);
 				cout << "statement: " << statement <<  endl;*/
+  	/*
 				if(sphere_matrix[m][n] ==0){  //just to get rid of some dumb ass floating point error
 					//this means we are at the edge of obstacle
 					// and sphere_matrix[m][n] in back
@@ -649,6 +733,108 @@ void MotionComputation::sphericalMatrixCallback(const std_msgs::Float32MultiArra
 			//}
 		}
 	}
+	*/
+
+  	  	// --------------To locate sub goals a little from the boundary: -----------------
+
+  	//max is like 27-41 for M = 60
+  	/*int m_min = M * 20/60;
+  	int m_max = M * 40/60;
+
+  	//cout << "m min " << m_min << " m max " << m_max << " M " << M << endl;
+  	// or we could omit sub goals where there is unknown in the octomap.. 
+	for( m = m_min ; m < m_max ; m++){  //max is like 27-41 for M = 60
+		for( n = 1; n< N-2 ; n++){ //and 50 - 68 for N = 120
+
+			//To make sure we're not on the edge of view of the camera:
+			//if(sphere_matrix[m][n] != 0){//robot_radius + safety_distance){
+
+			//Check horizontal difference:
+			difference = abs(sphere_matrix[m][n]-sphere_matrix[m][n+1]);
+			if(difference > 2*robot_radius ){// - (robot_radius + safety_distance)) >0.001){ 
+			//sphere_matrix[m][n+1] != robot_radius + safety_distance){
+				// this means that there is enough difference between these points to count
+				// as subgoal points...
+
+  	
+				if(sphere_matrix[m][n] < 0.001){  //just to get rid of some dumb ass floating point error
+					//this means we are at the edge of obstacle
+					// and sphere_matrix[m][n] in back
+					//so case 2 of subgoal location if enough space
+					if(difference > robot_radius*3 + safety_distance*2){
+						subgoal_matrix[m][n-1] = sphere_matrix[m][n+1] + robot_radius*2 + safety_distance;
+					}
+					//otherwise case 1:
+					else{
+						subgoal_matrix[m][n-1] = sphere_matrix[m][n+1] + difference / 2;	
+					}		 
+				}
+				else if(sphere_matrix[m][n+1] < 0.001){
+					//this means we are at the edge of obstacle
+					//so case 2 of subgoal location if enough space
+					if(difference > robot_radius*3 + safety_distance*2){
+						subgoal_matrix[m][n+2] = sphere_matrix[m][n] + robot_radius*2 + safety_distance;	
+					}
+					//otherwise case 1:
+					else{
+						subgoal_matrix[m][n+2] = sphere_matrix[m][n] + difference / 2;	
+					}	 
+				} 
+				else{
+					//otherwise we're between obstacles
+					if(sphere_matrix[m][n]<sphere_matrix[m][n+1]){
+						subgoal_matrix[m][n+2] = sphere_matrix[m][n] + difference/2;
+					}
+					else{
+						subgoal_matrix[m][n-1] = sphere_matrix[m][n+1] + difference/2;
+					}
+				} 
+			}
+
+			//Check vertical difference:
+			difference = abs(sphere_matrix[m][n]-sphere_matrix[m+1][n]);
+			if(difference > 2*robot_radius){
+				// this means that there is enough difference between these points to count
+				// as subgoal points...
+
+				if(sphere_matrix[m][n] < 0.001){
+					//this means we are at the edge of obstacle
+					//so case 2 of subgoal location if enough space
+					if(difference > robot_radius*3 + safety_distance*2){
+						subgoal_matrix[m-1][n] = sphere_matrix[m+1][n] + robot_radius*2 + safety_distance;	
+					}
+					//otherwise case 1:
+					else{
+						subgoal_matrix[m-1][n] = sphere_matrix[m+1][n] + difference / 2;	
+					}		 
+				}
+				else if(sphere_matrix[m+1][n] < 0.001){
+					//this means we are at the edge of obstacle
+					//so case 2 of subgoal location if enough space
+					if(difference > robot_radius*3 + safety_distance*2){
+						subgoal_matrix[m+2][n] = sphere_matrix[m][n] + robot_radius*2 + safety_distance;	
+					}
+					//otherwise case 1:
+					else{
+						subgoal_matrix[m+2][n] = sphere_matrix[m][n] + difference / 2;	
+					}	 
+				} 
+				else{
+					//otherwise we're between obstacles
+					if(sphere_matrix[m][n]<sphere_matrix[m+1][n]){
+						subgoal_matrix[m+2][n] = sphere_matrix[m][n] + difference/2;
+					}
+					else{
+						subgoal_matrix[m-1][n] = sphere_matrix[m+1][n] + difference/2;
+					}
+				} 
+			}
+			//}
+		}
+	}*/
+
+
+
 
 
 
@@ -1441,7 +1627,7 @@ void MotionComputation::goalPositionCallback(const geometry_msgs::Vector3ConstPt
 			// -----------------------------Now find S1 and S2: ---------------------------------
 			//Vector3d n_D;
 			float gamma, gamma_i, obst_dist;//, alpha;
-			int m_gamma, m_min, m_max;
+			int m_gamma;
 			float matrix_half_radian_resolution = spherical_matrix_degree_resolution * pi / 360;
 			vector< vector<double> > n_D_vectors_TR,n_D_vectors_TL, n_D_vectors_DR, n_D_vectors_DL;
 			vector< vector<double> > bad_directions_TR,bad_directions_TL, bad_directions_DR, bad_directions_DL;
@@ -1759,7 +1945,7 @@ void MotionComputation::goalPositionCallback(const geometry_msgs::Vector3ConstPt
 
 
 		  	//Remove boundary points that are not in field of view of camera.. 
-		  	int m_camera_min = M * 28/60;
+		  	int m_camera_min = M * 20/60; // 28
 		  	int m_camera_max = M * 40/60;
 
 			for(m = 0; m < M ; m ++){
@@ -1840,7 +2026,7 @@ void MotionComputation::goalPositionCallback(const geometry_msgs::Vector3ConstPt
 			cout << "S_nD_DL: " << endl;
 			for(m=M-1;m>=0;m--){
 				for(n=N-1;n>=0;n--){
-				cout << S_nD_DL[m][n] << " ";
+			google calendar	cout << S_nD_DL[m][n] << " ";
 				}
 				cout<< endl;
 			}*/
@@ -1911,7 +2097,7 @@ void MotionComputation::goalPositionCallback(const geometry_msgs::Vector3ConstPt
 	    		cout << S_TL_bound_vectors[i][0] << " "<< S_TL_bound_vectors[i][1] << " " << S_TL_bound_vectors[i][2] << endl;
 	    	}*/
 
-		    if(free_direction){
+		    //if(free_direction){
 				// ---------------------------------------This means there exist free directions---------------------------------------
 				if(S_nD_TL[m_targ][n_targ]){
 					// calculate u^TL_dom, the direction on the boundary that is closest to the target direction...
@@ -2033,8 +2219,8 @@ void MotionComputation::goalPositionCallback(const geometry_msgs::Vector3ConstPt
 						cout << "bound directions for DR < 2" << endl;
 					}					
 				}
-			}
-			else{
+			//}
+			/*else{
 				// ------------------------------------------This means there is no free direction-----------------------------------
 				//Vector3d 
 				vector <double> sum_vector;
@@ -2239,7 +2425,7 @@ void MotionComputation::goalPositionCallback(const geometry_msgs::Vector3ConstPt
 						}
 					}					
 				}
-			}
+			}*/
 
 			// -------------------------------Now calculate the most desired direction of motion----------------------
 			/*cout << "u_targ: " << u_targ << endl;
@@ -2489,6 +2675,7 @@ void MotionComputation::robotPositionCallback(const geometry_msgs::PoseStampedCo
 
 void MotionComputation::octoMapCallback(const octomap_msgs::OctomapConstPtr& octomap_msg){
 
+	//cout << "in octomap callback" << endl;
     octomap::AbstractOcTree* oldtree = octomap_msgs::binaryMsgToMap(*octomap_msg);
     tree = (octomap::OcTree*)oldtree;
 
@@ -2614,7 +2801,7 @@ int main(int argc, char** argv)
 
 
 bool MotionComputation::isReachable(const Vector3d & direction){ 
-//geometry_msgs::Vector3 direction){
+	//geometry_msgs::Vector3 direction){
 
 	//check if direction is reachable from current robot location...
 
@@ -2735,6 +2922,7 @@ bool MotionComputation::isReachable(const Vector3d & direction){
     max_point.z() =max(robot_bbx_corner [2], goal_bbx_corner [2]);
     //cout << "max: " << max_point << endl;
 
+    // Consider revising for different box sizes: 
     for(OcTree::leaf_bbx_iterator it = tree->begin_leafs_bbx(min_point,max_point),end=tree->end_leafs_bbx(); it!= end; ++it)
     {
     	if(it->getValue() > 0 ){

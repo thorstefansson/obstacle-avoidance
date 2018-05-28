@@ -86,15 +86,24 @@ private:
 
     ros::Publisher pub;
     ros::Publisher pub_matrix;
+    ros::Publisher pub_subgoal_matrix;
     ros::Publisher pub_cloud;
     ros::Publisher pub_init_cloud;
-    
+    ros::Publisher pub_subgoal_cloud;
+    ros::Publisher pub_points_checked_cloud;
+
+
 
     Vector3d goal_position, robot_position;
     float robot_orientation [4];
     double box_width_m;
     int M,N;
 
+    bool sphere_model [100][100][100];//[200] [200] [200]; //box_width_m/octomap_resolution e.g. 10 m / 0.05 m = 200  [50][50][50];//
+
+    double robot_radius;
+//    double robot_diameter;
+    double safety_distance;
     
     double val_from_subscriber_; //example member variable: better than using globals; convenient way to pass data from a subscriber to other member functions
     double val_to_remember_; // member variables will retain their values even as callbacks come and go

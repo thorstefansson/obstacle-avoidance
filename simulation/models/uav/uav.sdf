@@ -19,7 +19,7 @@
         <pose frame=''>0 0 0 0 -0 0</pose>
         <geometry>
           <box>
-            <size>0.47 0.47 0.11</size>
+            <size>0.47 0.47 0.11</size> <!-- for 60 cm: 0.2433 circumference changed from 47 -->
           </box>
         </geometry>
         <surface>
@@ -105,7 +105,7 @@
         <geometry>
           <cylinder>
             <length>0.005</length>
-            <radius>0.128</radius>
+            <radius>0.128</radius><!--<radius>0.05</radius>-->
           </cylinder>
         </geometry>
         <surface>

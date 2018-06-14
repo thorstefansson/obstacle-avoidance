@@ -153,6 +153,7 @@ add_executable(cloud_to_spherical src/cloud_to_spherical.cpp)
 add_executable(laser_octomap src/laser_octomap.cpp)
 add_executable(sensors_to_spherical src/sensors_to_spherical.cpp)
 add_executable(octomap_to_spherical src/octomap_to_spherical.cpp)
+add_executable(unknown_octomap_to_spherical src/unknown_octomap_to_spherical.cpp)
 
 target_link_libraries(tf_robot ${catkin_LIBRARIES})
 
@@ -165,6 +166,7 @@ target_link_libraries(tf_listener ${catkin_LIBRARIES})
 target_link_libraries(cloud_to_spherical ${catkin_LIBRARIES})
 target_link_libraries(sensors_to_spherical ${catkin_LIBRARIES})
 target_link_libraries(octomap_to_spherical ${catkin_LIBRARIES})
+target_link_libraries(unknown_octomap_to_spherical ${catkin_LIBRARIES})
 #target_link_libraries(${OCTOMAP_LIBRARIES})
 
 link_directories(${OCTOMAP_LIBRARY_DIRS})

@@ -91,6 +91,7 @@ private:
     ros::Publisher pub_u_sol;
     ros::Publisher pub_u_dom_cloud; // for publishing the u_dom that are used...
     ros::Publisher pub_u_sol_cloud;
+    ros::Publisher pub_points_to_Cspace;
 
     //ros::Publisher pub_u_targ;
     // Target vector equals direction vector to goal point if it is rechable, 
@@ -138,7 +139,7 @@ private:
     double max_camera_range;
     double robot_radius;
     double robot_diameter;
-    double safety_distance;
+    double safety_distance, alpha_safety_distance, beta_safety_distance;
     double max_sonar_range;
     float radius_sq;
     float diameter_sq;
@@ -151,12 +152,13 @@ private:
     //int Cspace [][20][20];
 
     // The following change depending on resolution:
-    /*// For 3 degree resolution: 
-    double sphere_matrix [60][120];
-    double subgoal_matrix[60][120];// = {0};
-    // For 2 cm resolution :
-    int sphere_model[10][10][10];
-    int Cspaceframe[20][20], n_radius;*/
+    // For 3 degree resolution: 
+    // double sphere_matrix [60][120];
+    // double subgoal_matrix[60][120];// = {0};
+    // double unitary_direction_vectors_matrix [60][120][3];
+    // // For 2 cm resolution :
+    // int sphere_model[10][10][10];
+    // int Cspaceframe[20][20], n_radius;
     //For 5 degree resolution: 
     //double sphere_matrix [36][72];
     //double subgoal_matrix[36][72];// = {0};

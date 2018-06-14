@@ -1,0 +1,11 @@
+<launch>
+
+	<include file = "$(find robot_setup_tf)/launch/unknown_octomap_to_spherical.launch" />
+
+	<node pkg="robot_control" type="unknown_motion_computation" name="unknown_motion_computation" output="screen" />
+
+	<node pkg = "unknown_robot_control" type="robot_control" name="unknown_robot_control" output="screen" />
+	
+	<node pkg="rviz" type="rviz" name="rviz" />
+
+</launch>

@@ -35,7 +35,11 @@ OctomapToSpherical::OctomapToSpherical(ros::NodeHandle* nodehandle):nh_(*nodehan
 
     //robot_radius = 0.35;//0.4;
     robot_radius = 0.4;
-    safety_distance = 0.4;
+
+    //not really important safety distance
+    //safety_distance = 0.5;
+
+    laser_vertical_offset = 0.13;
 
     
     // Height and width of our spherical occupancy matrix:
@@ -44,6 +48,8 @@ OctomapToSpherical::OctomapToSpherical(ros::NodeHandle* nodehandle):nh_(*nodehan
     deg_resolution = 6;
     M = 180 / deg_resolution;
     N = 360 / deg_resolution;
+    cout << "M and N in octomap to spherical: " << "M: " << M << "N: " << N << endl;
+
 
     half_box_width_m = box_width_m / 2;
 
@@ -95,7 +101,7 @@ void OctomapToSpherical::initializePublishers()
     pub_init_cloud = nh_.advertise<sensor_msgs::PointCloud2>("/cloud_to_octomap", 1, true);
     //pub_subgoal_cloud= nh_.advertise<sensor_msgs::PointCloud2>("subgoal_cloud", 1, true);
 
-    //pub_points_checked_cloud= nh_.advertise<sensor_msgs::PointCloud2>("points_checked_cloud", 1, true);
+    pub_points_checked_cloud= nh_.advertise<sensor_msgs::PointCloud2>("points_checked_cloud", 1, true);
 
 
     //add more publishers, as needed
@@ -110,10 +116,10 @@ void OctomapToSpherical::initializeOctomap()
     //to make a free box or sphere around the initial robot position
 
     double width = 20*resolution; // 20 is for 1m^3 box around robot when octomap resolution is 5 cm
-    double robot_height_from_ground = 0.05;
+    double robot_height_from_ground = 0.15+laser_vertical_offset; // its actually between 0.05 - 0.1 according to topic but whatever.. 
 
     PointCloud::Ptr cloud_msg (new PointCloud);
-    cloud_msg->header.frame_id = "base_link";
+    cloud_msg->header.frame_id = "laser_link";
     cloud_msg->height = 1;
     // change this:
     //cloud_msg->width = ceil(width/(resolution*resolution) * 6);
@@ -132,7 +138,7 @@ void OctomapToSpherical::initializeOctomap()
     }
     // Fill in side where x constant
     for(float y = -width/2 ; y < width/2 ; y += resolution){
-        for (float z = robot_height_from_ground; z < width + robot_height_from_ground; z += resolution)
+        for (float z = -robot_height_from_ground; z < width - robot_height_from_ground; z += resolution)
         {
             cloud_msg->points.push_back (pcl::PointXYZ(-width/2,y,z));  // ? how high is base_link above ground??
             cloud_msg->points.push_back (pcl::PointXYZ(width/2,y,z));
@@ -141,7 +147,7 @@ void OctomapToSpherical::initializeOctomap()
     }
     // Fill in side where y constant
     for(float x = -width/2 ; x < width/2 ; x += resolution){
-        for (float z = robot_height_from_ground; z < width + robot_height_from_ground; z += resolution)
+        for (float z = -robot_height_from_ground; z < width - robot_height_from_ground; z += resolution)
         {
             count+=2;
             cloud_msg->points.push_back (pcl::PointXYZ(x,-width/2,z));  // ? how high is base_link above ground??
@@ -167,9 +173,9 @@ void OctomapToSpherical::initializeOctomap()
     ros::Rate r(10); // 10 hz
     while (count < 50)
     {
-    pub_init_cloud.publish (cloud_output);
-    count++;
-    r.sleep();
+        pub_init_cloud.publish (cloud_output);
+        count++;
+        r.sleep();
     }
 
     // Then call the /octomap_server/clear_bbx service, to clear out the boundary of the box / sphere 
@@ -209,11 +215,12 @@ void OctomapToSpherical::initializeOctomap()
 
     int min_val;
 
-    if ((int)(box_width_m/resolution) % 2 == 0){
+    /*if ((int)(box_width_m/resolution) % 2 == 0){
         // even number
         min_val = 1;
     }
-    else min_val = 0;
+    else min_val = 0;*/
+    min_val = 0;
 
     double ivalue, jvalue, kvalue;
     for (int i = min_val ; i <= half_matrix_width ; i ++){
@@ -402,7 +409,7 @@ void OctomapToSpherical::octoMapCallback(const octomap_msgs::OctomapConstPtr& oc
     //cout << "here" << endl;
     double sphere_matrix [M][N] = {0}, sphere_matrix_with_unknown[M][N] = {0};
     double r_sq, distance_sq, node_size;
-    double length_to_check = resolution / sin(deg_resolution*180/pi); // This is at horizontal plane... 
+    double length_to_check;// = resolution / sin(deg_resolution*pi/180); // This is at horizontal plane... 
     double final_length_to_check;
     int node_size_multiple, size_distance_factor;
 
@@ -418,6 +425,7 @@ void OctomapToSpherical::octoMapCallback(const octomap_msgs::OctomapConstPtr& oc
 
     // inverse of robot quaternion:
     Vector3d robot_orientation_inverse_v;
+    Vector3d roivxp; // robot_orientation_inverse x point
     float robot_orientation_inverse_w;
 
     float robot_orientation_sum_squared = pow(robot_orientation[0],2) + pow(robot_orientation[1],2) + pow(robot_orientation[2],2)
@@ -433,6 +441,32 @@ void OctomapToSpherical::octoMapCallback(const octomap_msgs::OctomapConstPtr& oc
 
 
 
+    
+
+    //cout << "box_width = " << box_width << endl;
+    //int bounding_box_matrix [box_width] [box_width] [box_width] = {0};
+    //cout << "Hmm" << endl;
+
+    //cout << "box_width: " << box_width << endl;
+
+
+    /*PointCloud::Ptr msg (new PointCloud);
+    msg->header.frame_id = "base_link";
+    msg->height = 1;
+    int countpoints = 0;*/
+
+
+    // We want to publish the position and orientation of the robot at the time of this matrix being calculated to make accurate sub goal distance computations
+
+    // so let's allocate some space in the sphere matrix for that.. 
+    sphere_matrix[0][0] = robot_position[0];
+    sphere_matrix[0][1] = robot_position[1];
+    sphere_matrix[0][2] = robot_position[2];
+    sphere_matrix[0][3] = robot_orientation[0];
+    sphere_matrix[0][4] = robot_orientation[1];
+    sphere_matrix[0][5] = robot_orientation[2];
+    sphere_matrix[0][6] = robot_orientation[3];
+    
     point3d min;
     min.x() = robot_position[0] - half_box_width_m; min.y() = robot_position[1] - half_box_width_m; min.z() = robot_position[2] - half_box_width_m;
     //cout << "min"<< min << endl;
@@ -440,15 +474,11 @@ void OctomapToSpherical::octoMapCallback(const octomap_msgs::OctomapConstPtr& oc
     max.x() = robot_position[0] + half_box_width_m; max.y() = robot_position[1] + half_box_width_m; max.z() = robot_position[2] + half_box_width_m;
     //cout << "max" <<max << endl;
 
-    int box_width = box_width_m/resolution;
-    //cout << "box_width = " << box_width << endl;
-    //int bounding_box_matrix [box_width] [box_width] [box_width] = {0};
-    //cout << "Hmm" << endl;
+    
+    // ------------------------------------------------------ TO LABEL UNKNOWN AS OCCUPIED: -------------------------------------------------------------------------
 
-    //cout << "box_width: " << box_width << endl;
-
-    // OR:
-
+    
+    /*int box_width = box_width_m/resolution;
     node_size = resolution;
     int countx=0, county=0, countz=0;
     for (double ix = min.x() + resolution/2; ix < max.x(); ix += resolution){
@@ -464,9 +494,17 @@ void OctomapToSpherical::octoMapCallback(const octomap_msgs::OctomapConstPtr& oc
                         //This cell is unknown, so mark as occupied ... 
                         point[0]=ix - robot_position[0]; point[1]=iy - robot_position[1]; point[2]=iz - robot_position[2];
 
-                        point_robot_frame = point + 2*robot_orientation_inverse_w*cross(robot_orientation_inverse_v, point) +
-                        2*cross(robot_orientation_inverse_v, cross(robot_orientation_inverse_v, point));
+                        roivxp = cross(robot_orientation_inverse_v, point);
+                        point_robot_frame = point + 2*robot_orientation_inverse_w*roivxp + 2*cross(robot_orientation_inverse_v, roivxp);
                         
+                        // another way:
+                        //point_robot_frame = 2.0f * dot(robot_orientation_inverse_v, point) * robot_orientation_inverse_v
+                        //                    + (pow(robot_orientation_inverse_w,2) - dot(robot_orientation_inverse_v, robot_orientation_inverse_v)) * point
+                        //                    + 2.0f * robot_orientation_inverse_w * cross(robot_orientation_inverse_v, point);
+                        // One more way:
+
+                        //point_robot_frame = q_robot_orientation * tf_point * q_robot_orientation_inverse;
+
                         x=point_robot_frame[0]; y=point_robot_frame[1]; z=point_robot_frame[2];
                         
                         r_sq = pow(x,2)+pow(y,2);
@@ -504,14 +542,14 @@ void OctomapToSpherical::octoMapCallback(const octomap_msgs::OctomapConstPtr& oc
                             cout << "m: " << m << " n:" << n << endl;
                         }
 
-                        final_length_to_check = length_to_check* abs(sin(fmod(phi, (pi/2)) * 2));
+                        final_length_to_check = resolution*1.4142/ sin(deg_resolution*pi/180);//length_to_check* abs(sin(fmod(phi, (pi/2)) * 2));  * factor(1 + 0.4142*sin(abs(fmod(phi, (pi/2))) * 2))
 
                         if(rho*cos(phi) < final_length_to_check  ){
                             //cout << "special case" << endl;
                             // now we need to fill out more than one element in the sphere matrix
                             m_size_distance_factor =  floor( final_length_to_check / rho); //floor(4 * node_size_multiple / ceil(rho*4)) ;
                             
-                            n_size_distance_factor = floor( length_to_check /rho*cos(phi));
+                            n_size_distance_factor = floor( final_length_to_check /(rho*cos(phi)));
 
                             //if(size_distance_factor >=1){ 
 
@@ -531,14 +569,20 @@ void OctomapToSpherical::octoMapCallback(const octomap_msgs::OctomapConstPtr& oc
                         // this cell is occupied
                         //bounding_box_matrix [countx] [county] [countz] = 1;
 
-                        //This cell is unknown, so mark as occupied ... 
                         point[0]=ix - robot_position[0]; point[1]=iy - robot_position[1]; point[2]=iz - robot_position[2];
 
-                        point_robot_frame = point + 2*robot_orientation_inverse_w*cross(robot_orientation_inverse_v, point) +
-                        2*cross(robot_orientation_inverse_v, cross(robot_orientation_inverse_v, point));
-                        
+                        //roivxp = cross(robot_orientation_inverse_v, point);
+                        //point_robot_frame = point + 2*robot_orientation_inverse_w*roivxp + 2*cross(robot_orientation_inverse_v, roivxp);
+                        // another way:
+                        point_robot_frame = 2.0f * dot(robot_orientation_inverse_v, point) * robot_orientation_inverse_v
+                                            + (pow(robot_orientation_inverse_w,2) - dot(robot_orientation_inverse_v, robot_orientation_inverse_v)) * point
+                                            + 2.0f * robot_orientation_inverse_w * cross(robot_orientation_inverse_v, point);
+
+                        // One more way:
+
+
                         x=point_robot_frame[0]; y=point_robot_frame[1]; z=point_robot_frame[2];
-                        
+
                         r_sq = pow(x,2)+pow(y,2);
                         distance_sq = r_sq+pow(z,2);
 
@@ -566,6 +610,8 @@ void OctomapToSpherical::octoMapCallback(const octomap_msgs::OctomapConstPtr& oc
                         if(m> -1 && n> -1 && m < M && n< N){ //~isnan(m) && ~isnan(n)){
                             if( rho < sphere_matrix[m][n] || sphere_matrix[m][n] == 0){
                                 sphere_matrix[m][n] = rho - node_size/2;
+                                //msg->points.push_back (pcl::PointXYZ(x,y,z));
+                                //countpoints++;
                             }
                             if( rho < sphere_matrix_with_unknown[m][n] || sphere_matrix_with_unknown[m][n] == 0){
                                 sphere_matrix_with_unknown[m][n] = rho - node_size/2;
@@ -575,20 +621,22 @@ void OctomapToSpherical::octoMapCallback(const octomap_msgs::OctomapConstPtr& oc
                             cout << "m: " << m << " n:" << n << endl;
                         }
 
-                        final_length_to_check = length_to_check* abs(sin(fmod(phi, (pi/2)) * 2));
+                        final_length_to_check = resolution*1.4142/ sin(deg_resolution*pi/180);//length_to_check* abs(sin(fmod(phi, (pi/2)) * 2));  * factor(1 + 0.4142*sin(abs(fmod(phi, (pi/2))) * 2))
 
                         if(rho*cos(phi) < final_length_to_check  ){
                             //cout << "special case" << endl;
                             // now we need to fill out more than one element in the sphere matrix
                             m_size_distance_factor =  floor( final_length_to_check / rho); //floor(4 * node_size_multiple / ceil(rho*4)) ;
                             
-                            n_size_distance_factor = floor( length_to_check /rho*cos(phi));
+                            n_size_distance_factor = floor( final_length_to_check /(rho*cos(phi)));
 
                             for(int i = m - m_size_distance_factor ; i <= m+m_size_distance_factor ; i++){
                                 for(int j = n - n_size_distance_factor ; j <= n+n_size_distance_factor ; j++){
                                     if(i> -1 && j> -1 && i < M && j< N){ //?
                                         if( rho < sphere_matrix[i][j] || sphere_matrix[i][j] == 0){
                                             sphere_matrix[i][j] = rho - node_size/2;
+                                           // msg->points.push_back (pcl::PointXYZ(x,y,z));
+                                            //countpoints++;
                                         }
                                         if( rho < sphere_matrix_with_unknown[i][j] || sphere_matrix_with_unknown[i][j] == 0){
                                             sphere_matrix_with_unknown[i][j] = rho - node_size/2;
@@ -598,13 +646,13 @@ void OctomapToSpherical::octoMapCallback(const octomap_msgs::OctomapConstPtr& oc
                             }
                         }
                     }
-                    /*else if(tree->search(ix,iy,iz)->getValue() < 0){
-                        // this cell is free ...
-                        //bounding_box_matrix [countx] [county] [countz] = -1;
-                    }
-                    else{
-                        cout << "eitthvad skrytid" << endl;
-                    }*/ 
+                    // else if(tree->search(ix,iy,iz)->getValue() < 0){
+                    //     // this cell is free ...
+                    //     //bounding_box_matrix [countx] [county] [countz] = -1;
+                    // }
+                    // else{
+                    //     cout << "eitthvad skrytid" << endl;
+                    // }
 
 
                 }
@@ -617,13 +665,29 @@ void OctomapToSpherical::octoMapCallback(const octomap_msgs::OctomapConstPtr& oc
         county = 0;
     }
 
-    cout << "sphere matrix: " << endl;// << sphere_matrix << endl;
+    sphere_matrix_with_unknown[0][0] = robot_position[0];
+    sphere_matrix_with_unknown[0][1] = robot_position[1];
+    sphere_matrix_with_unknown[0][2] = robot_position[2];
+    sphere_matrix_with_unknown[0][3] = robot_orientation[0];
+    sphere_matrix_with_unknown[0][4] = robot_orientation[1];
+    sphere_matrix_with_unknown[0][5] = robot_orientation[2];
+    sphere_matrix_with_unknown[0][6] = robot_orientation[3];
+    */
+
+    /*cout << "sphere matrix: " << endl;// << sphere_matrix << endl;
     for (m = M-1; m>=0 ; m--){
         for(n=0;n<N;n++){
             cout << sphere_matrix[m][n] << " " ;
         }
         cout << endl;
-    }
+    }*/
+
+    /*msg->width = countpoints;
+    // Convert to ROS data type
+    sensor_msgs::PointCloud2 output;
+    pcl::toROSMsg(*msg, output);
+    // Publish the data
+    pub.publish (output); */
 
  /*   //-------------------Transform again to point cloud for visualizing in rviz:------------------------
 
@@ -666,7 +730,7 @@ void OctomapToSpherical::octoMapCallback(const octomap_msgs::OctomapConstPtr& oc
 
     // --------------------------------------------------TO USE BBX ITERATOR, IGNORE UNKNOWN SPACE:-------------------------------------------
 
-    /*for(OcTree::leaf_bbx_iterator it = tree->begin_leafs_bbx(min,max),end=tree->end_leafs_bbx(); it!= end; ++it)
+    for(OcTree::leaf_bbx_iterator it = tree->begin_leafs_bbx(min,max),end=tree->end_leafs_bbx(); it!= end; ++it)
     {
         //manipulate node, e.g.:
         //std::cout << "Node center: " << it.getCoordinate() << std::endl;
@@ -682,8 +746,8 @@ void OctomapToSpherical::octoMapCallback(const octomap_msgs::OctomapConstPtr& oc
             //x=it.getX() - robot_position[0]; y=it.getY() - robot_position[1]; z=it.getZ() - robot_position[2];
             point[0]=it.getX() - robot_position[0]; point[1]=it.getY() - robot_position[1]; point[2]=it.getZ() - robot_position[2];
 
-            point_robot_frame = point + 2*robot_orientation_inverse_w*cross(robot_orientation_inverse_v, point) +
-            2*cross(robot_orientation_inverse_v, cross(robot_orientation_inverse_v, point));
+            roivxp = cross(robot_orientation_inverse_v, point);
+            point_robot_frame = point + 2*robot_orientation_inverse_w*roivxp + 2*cross(robot_orientation_inverse_v, roivxp);
             
             x=point_robot_frame[0]; y=point_robot_frame[1]; z=point_robot_frame[2];
             
@@ -716,15 +780,16 @@ void OctomapToSpherical::octoMapCallback(const octomap_msgs::OctomapConstPtr& oc
                 if(n>=N){
                     n=n-N;
                 }
-                if(m> -1 && n> -1 && m < M && n< N){ //~isnan(m) && ~isnan(n)){
+                //if(m> -1 && n> -1 && m < M && n< N){ //~isnan(m) && ~isnan(n)){
+                if(m> 0 && n> -1 && m < M && n< N){ //~isnan(m) && ~isnan(n)){ // not put anything where m = 0, since we want to put robot position and orientation info there..  
                     if( rho < sphere_matrix[m][n] || sphere_matrix[m][n] ==0){
                         //cout << "in" << endl;
                         sphere_matrix[m][n] = rho - node_size/2;  
                     }
                 }
-                else{
-                    cout << "m: " << m << " n:" << n << endl;
-                }
+                // else{
+                //     cout << "m: " << m << " n:" << n << endl;
+                // }
 
                 //since we have boxes of size 3 deg, at 1m distance that is 5 cm, which is the resolution of the octomap...
 
@@ -732,52 +797,61 @@ void OctomapToSpherical::octoMapCallback(const octomap_msgs::OctomapConstPtr& oc
                 // so like at: distance * sin(degree_resolution) < octomap_resolution* node_multiple * sqrt(2)  (if at 45 degrees)
                 // we're gonna have to fill out more than one element of the occupancy matrix
                 // so .. 
-                node_size_multiple = round(node_size/resolution);
-                if(rho<length_to_check || node_size_multiple >1 ){
+
+                final_length_to_check = node_size/( rho * sin(deg_resolution*pi/180));//length_to_check* abs(sin(fmod(phi, (pi/2)) * 2));  * factor(1 + 0.4142*sin(abs(fmod(phi, (pi/2))) * 2))
+
+                if(cos(phi) < final_length_to_check *sqrt(2) ){
                     //cout << "special case" << endl;
                     // now we need to fill out more than one element in the sphere matrix
-                    size_distance_factor =  floor(resolution*node_size_multiple*1.4142/(rho * sin(deg_resolution))); //floor(4 * node_size_multiple / ceil(rho*4)) ;
+                    m_size_distance_factor =  ceil( final_length_to_check*sqrt(2) / 2);  // Here we should use sqrt(3) instead of sqrt(2) for the absolute maximum, but fuck that... 
                     
-                    if(size_distance_factor >=1){ // size_distance_factor >=1
-                        
-                        // find which quadrant of angle box the center is..
-                        //bool horizontal = signbit((phi + pi/2) * M / pi round((phi + pi/2) * M / pi));
-                        // ah, fuck that, lets just make this simple... and perhaps fill out more than we should.. 
+                    n_size_distance_factor = ceil( final_length_to_check*sqrt(2) /(2 * cos(phi)));
 
-                        for(int i = m - size_distance_factor ; i <= m+size_distance_factor ; i++){
-                            for(int j = n - size_distance_factor ; j <= n+size_distance_factor ; j++){
-                                if(i> -1 && j> -1 && i < M && j< N){ //?
-                                    if( rho < sphere_matrix[i][j] || sphere_matrix[i][j] == 0){
-                                            sphere_matrix[i][j] = rho - node_size/2;
-                                    }
+                    for(int i = m - m_size_distance_factor ; i <= m+m_size_distance_factor ; i++){
+                        for(int j = n - n_size_distance_factor ; j <= n+n_size_distance_factor ; j++){
+                            //if(i> -1 && j> -1 && i < M && j< N){ //?
+                            if(i> 0 && j> -1 && i < M && j< N){ // not put anything where m = 0, since we want to put robot position and orientation info there..  
+                                if( rho < sphere_matrix[i][j] || abs(sphere_matrix[i][j]) < 0.0001){
+                                    sphere_matrix[i][j] = rho - node_size/2;
+                                   // msg->points.push_back (pcl::PointXYZ(x,y,z));
+                                    //countpoints++;
                                 }
                             }
                         }
                     }
                 }
+
+                
+                // node_size_multiple = round(node_size/resolution);
+                // if(rho<length_to_check || node_size_multiple >1 ){
+                //     //cout << "special case" << endl;
+                //     // now we need to fill out more than one element in the sphere matrix
+                //     size_distance_factor =  floor(resolution*node_size_multiple*1.4142/(rho * sin(deg_resolution))); //floor(4 * node_size_multiple / ceil(rho*4)) ;
+                    
+                //     if(size_distance_factor >=1){ // size_distance_factor >=1
+                        
+                //         // find which quadrant of angle box the center is..
+                //         //bool horizontal = signbit((phi + pi/2) * M / pi round((phi + pi/2) * M / pi));
+                //         // ah, fuck that, lets just make this simple... and perhaps fill out more than we should.. 
+
+                //         for(int i = m - size_distance_factor ; i <= m+size_distance_factor ; i++){
+                //             for(int j = n - size_distance_factor ; j <= n+size_distance_factor ; j++){
+                //                 if(i> -1 && j> -1 && i < M && j< N){ //?
+                //                     if( rho < sphere_matrix[i][j] || sphere_matrix[i][j] == 0){
+                //                             sphere_matrix[i][j] = rho - node_size/2;
+                //                     }
+                //                 }
+                //             }
+                //         }
+                //     }
+                // }
             }
         }
 
        //if (it.getSize() > 0.05 ) cout << "larger" ;
-    }*/
+    }
 
-    // We want to publish the position and orientation of the robot at the time of this matrix being calculated to make accurate sub goal distance computations
 
-    // so let's allocate some space in the sphere matrix for that.. 
-    /*sphere_matrix[0][0] = robot_position[0];
-    sphere_matrix[0][1] = robot_position[1];
-    sphere_matrix[0][2] = robot_position[2];
-    sphere_matrix[0][3] = robot_orientation[0];
-    sphere_matrix[0][4] = robot_orientation[1];
-    sphere_matrix[0][5] = robot_orientation[2];
-    sphere_matrix[0][6] = robot_orientation[3];*/
-    sphere_matrix_with_unknown[0][0] = robot_position[0];
-    sphere_matrix_with_unknown[0][1] = robot_position[1];
-    sphere_matrix_with_unknown[0][2] = robot_position[2];
-    sphere_matrix_with_unknown[0][3] = robot_orientation[0];
-    sphere_matrix_with_unknown[0][4] = robot_orientation[1];
-    sphere_matrix_with_unknown[0][5] = robot_orientation[2];
-    sphere_matrix_with_unknown[0][6] = robot_orientation[3];
 
 
         //---------------------------------Publish matrix to topic:-----------------------------------------
@@ -823,8 +897,8 @@ void OctomapToSpherical::octoMapCallback(const octomap_msgs::OctomapConstPtr& oc
             {
                 //r = rho * sin(phi);
                 rho = sphere_matrix[m][n];
-                theta = n *  pi / M - pi;
-                phi = m * pi / M - pi/2;
+                theta = (n+0.5) *  pi / M - pi;
+                phi = (m+0.5) * pi / M - pi/2;
 
                 r = rho * cos(phi);
                 
@@ -836,15 +910,11 @@ void OctomapToSpherical::octoMapCallback(const octomap_msgs::OctomapConstPtr& oc
             }
         }
     }
-
     // Convert to ROS data type
     sensor_msgs::PointCloud2 output;
     pcl::toROSMsg(*msg, output);
     // Publish the data
     pub.publish (output); 
-
-
-
 
 
     // -------------Try locating sub goals here in order to remove sub goals created on surfaces due to discretization:---------------
@@ -856,11 +926,21 @@ void OctomapToSpherical::octoMapCallback(const octomap_msgs::OctomapConstPtr& oc
     float robot_orientation_w = robot_orientation[3];
 
 
+     /*PointCloud::Ptr points_checked_msg (new PointCloud);
+        points_checked_msg->header.frame_id = "/world";
+        points_checked_msg->height = 1;*/
+
     // --------------To locate sub goals exactly on the boundary: -----------------
-/*
+
+
+   /*
+
     //max is like 27-41 for M = 60
-    int m_min = M * 15/60;
-    int m_max = M * 45/60;
+    //max is like 27-41 for M = 60
+    int m_min = 1;//M * 20/60;
+    int m_max = M-1; //M * 40/60;
+
+    int angular_offset = 1; 
 
     //cout << "m min " << m_min << " m max " << m_max << " M " << M << endl;
     // or we could omit sub goals where there is unknown in the octomap.. 
@@ -872,87 +952,267 @@ void OctomapToSpherical::octoMapCallback(const octomap_msgs::OctomapConstPtr& oc
 
             //Check horizontal difference:
             difference = abs(sphere_matrix[m][n]-sphere_matrix[m][n+1]);
-            if(difference > 2*robot_radius ){// - (robot_radius + safety_distance)) >0.001){ 
+            if(difference > 0){// - (robot_radius + safety_distance)) >0.001){ 
             //sphere_matrix[m][n+1] != robot_radius + safety_distance){
-                // this means that there is enough difference between these points to count
-                // as subgoal points...
 
-                /*cout << "camera_x_offset + max_camera_range : " << camera_x_offset + max_camera_range <<  endl;
-                cout << "sphere_matrix[m][n]: " << sphere_matrix[m][n] <<  endl;
-                statement = sphere_matrix[m][n] - (camera_x_offset + max_camera_range);
-                cout << "statement: " << statement <<  endl;*/
-    /*
-                if(sphere_matrix[m][n] ==0){  //just to get rid of some dumb ass floating point error
+
+                phi = (m+0.5) * pi / M - pi/2;
+
+                if(sphere_matrix[m][n] < 0.0001){  //just to get rid of some dumb ass floating point error
                     //this means we are at the edge of obstacle
                     // and sphere_matrix[m][n] in back
-                    //so case 2 of subgoal location if enough space
-                    if(difference > robot_radius*3 + safety_distance*2){
-                        subgoal_matrix[m][n] = sphere_matrix[m][n+1] + robot_radius*2 + safety_distance;
-                    }
-                    //otherwise case 1:
-                    else{
-                        subgoal_matrix[m][n] = sphere_matrix[m][n+1] + difference / 2;  
-                    }        
+
+                    subgoal_matrix[m][n] = sphere_matrix[m][n+1] + robot_radius + safety_distance; // ORIGINAL
+                    
+                    // to only locate sub goals where we have free space in octomap:
+                    // theta = (n+1-angular_offset+0.5) * pi / M - pi + deg_resolution/2 * pi/180; // angle at n
+                    // rho = sphere_matrix[m][n+1] + robot_radius*2;
+                    // r = rho * cos(phi);
+                    // x = r * cos(theta);
+                    // y = r * sin(theta);
+                    // z = rho * sin(phi);
+                    // point_robot_frame[0] = x;
+                    // point_robot_frame[1] = y;
+                    // point_robot_frame[2] = z;
+
+                    // point = point_robot_frame + 2*robot_orientation_w*cross(robot_orientation_v, point_robot_frame) +
+                    // 2*cross(robot_orientation_v, cross(robot_orientation_v, point_robot_frame));
+
+                    // point[0] += robot_position[0];
+                    // point[1] += robot_position[1];
+                    // point[2] += robot_position[2];
+                    // if(tree->search(point[0], point[1],point[2])){  
+                    //     if(tree->search(point[0], point[1],point[2])->getValue() < 0){ 
+                    //         subgoal_matrix[m][n+1-angular_offset] = sphere_matrix[m][n+1] + robot_radius*2;// + safety_distance;
+                    //     }
+                    // }
+                    
                 }
-                else if(sphere_matrix[m][n+1] ==0){
+                else if(sphere_matrix[m][n+1] < 0.0001){
                     //this means we are at the edge of obstacle
-                    //so case 2 of subgoal location if enough space
-                    if(difference > robot_radius*3 + safety_distance*2){
-                        subgoal_matrix[m][n+1] = sphere_matrix[m][n] + robot_radius*2 + safety_distance;    
-                    }
-                    //otherwise case 1:
-                    else{
-                        subgoal_matrix[m][n+1] = sphere_matrix[m][n] + difference / 2;  
-                    }    
+
+                
+                    subgoal_matrix[m][n+1] = sphere_matrix[m][n] + robot_radius + safety_distance;
+
+                    // to only locate sub goals where we have free space in octomap:
+                    // theta = (n+angular_offset+1.5) * pi / M - pi + deg_resolution/2 * pi/180; // angle at n+1 ...
+                    // rho = sphere_matrix[m][n] + robot_radius*2;
+                    // r = rho * cos(phi);
+                    // x = r * cos(theta);
+                    // y = r * sin(theta);
+                    // z = rho * sin(phi);
+                    // point_robot_frame[0] = x;
+                    // point_robot_frame[1] = y;
+                    // point_robot_frame[2] = z;
+
+                    // point = point_robot_frame + 2*robot_orientation_w*cross(robot_orientation_v, point_robot_frame) +
+                    // 2*cross(robot_orientation_v, cross(robot_orientation_v, point_robot_frame));
+
+                    // point[0] += robot_position[0];
+                    // point[1] += robot_position[1];
+                    // point[2] += robot_position[2];
+
+                    // if(tree->search(point[0], point[1],point[2])){
+                    //     if(tree->search(point[0], point[1],point[2])->getValue() < 0) subgoal_matrix[m][n+angular_offset] = sphere_matrix[m][n] + robot_radius*2;
+                    // }
+                
                 } 
-                else{
+                else if(difference > 2*robot_radius){
+                    // this means that there is enough difference between these points to count
+                    // as subgoal points...
                     //otherwise we're between obstacles
+                    // Check here if point is located on surface .. 
+                    
+                    theta = (n+0.5) *  pi / M - pi + deg_resolution/2 * pi/180;
+
                     if(sphere_matrix[m][n]<sphere_matrix[m][n+1]){
-                        subgoal_matrix[m][n+1] = sphere_matrix[m][n] + difference/2;
+                        
+                        rho = sphere_matrix[m][n] + difference/2 + resolution/2;
+                        r = rho * cos(phi);
+                        x = r * cos(theta);
+                        y = r * sin(theta);
+                        z = rho * sin(phi);
+                        point_robot_frame[0] = x;
+                        point_robot_frame[1] = y;
+                        point_robot_frame[2] = z;
+
+                        point = point_robot_frame + 2*robot_orientation_w*cross(robot_orientation_v, point_robot_frame) +
+                        2*cross(robot_orientation_v, cross(robot_orientation_v, point_robot_frame));
+
+                        point[0] += robot_position[0];
+                        point[1] += robot_position[1];
+                        point[2] += robot_position[2];
+
+                        //points_checked_msg->points.push_back(pcl::PointXYZ(point[0], point[1],point[2]));
+                        
+                        if(!tree->search(point[0], point[1],point[2])) subgoal_matrix[m][n+1] = rho-resolution/2;
+                        else if(tree->search(point[0], point[1],point[2])->getValue() < 0) subgoal_matrix[m][n+1] = rho-resolution/2;
+                        // if(tree->search(point[0], point[1],point[2])){
+                        //     if(tree->search(point[0], point[1],point[2])->getValue() < 0) subgoal_matrix[m][n+angular_offset] = rho-resolution/2;
+                        // }
+                        
+
                     }
                     else{
-                        subgoal_matrix[m][n] = sphere_matrix[m][n+1] + difference/2;
+
+                        rho = sphere_matrix[m][n+1] + difference/2 + resolution/2;
+                        r = rho * cos(phi);
+                        x = r * cos(theta);
+                        y = r * sin(theta);
+                        z = rho * sin(phi);
+                        point_robot_frame[0] = x;
+                        point_robot_frame[1] = y;
+                        point_robot_frame[2] = z;
+
+                        point = point_robot_frame + 2*robot_orientation_w*cross(robot_orientation_v, point_robot_frame) +
+                        2*cross(robot_orientation_v, cross(robot_orientation_v, point_robot_frame));
+
+                        point[0] += robot_position[0];
+                        point[1] += robot_position[1];
+                        point[2] += robot_position[2];
+
+                        //points_checked_msg->points.push_back(pcl::PointXYZ(point[0], point[1],point[2]));
+
+                        if(!tree->search(point[0], point[1],point[2])) subgoal_matrix[m][n] = rho-resolution/2;
+                        else if(tree->search(point[0], point[1],point[2])->getValue() < 0) subgoal_matrix[m][n] = rho-resolution/2; 
+                        // if(tree->search(point[0], point[1],point[2])){
+                        //     if(tree->search(point[0], point[1],point[2])->getValue() < 0) subgoal_matrix[m][n+1-angular_offset] = rho-resolution/2; 
+                        // }   
+                    
                     }
                 } 
+                //if(angular_offset < 1) cout << "angular offset is: " << angular_offset << " in n difference" << endl;
+                //cout << "angular_offset for n: " << angular_offset << endl;
             }
 
             //Check vertical difference:
             difference = abs(sphere_matrix[m][n]-sphere_matrix[m+1][n]);
-            if(difference > 2*robot_radius){
+            if(difference > 0){
                 // this means that there is enough difference between these points to count
                 // as subgoal points...
 
-                if(sphere_matrix[m][n] ==0){
+                if(sphere_matrix[m][n] < 0.001){
                     //this means we are at the edge of obstacle
-                    //so case 2 of subgoal location if enough space
-                    if(difference > robot_radius*3 + safety_distance*2){
-                        subgoal_matrix[m][n] = sphere_matrix[m+1][n] + robot_radius*2 + safety_distance;    
-                    }
-                    //otherwise case 1:
-                    else{
-                        subgoal_matrix[m][n] = sphere_matrix[m+1][n] + difference / 2;  
-                    }        
+
+                    subgoal_matrix[m][n] = sphere_matrix[m+1][n] + robot_radius + safety_distance; // original...
+
+                    // phi = (m+0.5) * pi / M - pi/2; // angle at m
+                    // theta = (n+0.5) *  pi / M - pi;
+                    // rho = sphere_matrix[m+1][n] + robot_radius*2;
+                    // r = rho * cos(phi);
+                    // x = r * cos(theta);
+                    // y = r * sin(theta);
+                    // z = rho * sin(phi);
+                    // point_robot_frame[0] = x;
+                    // point_robot_frame[1] = y;
+                    // point_robot_frame[2] = z;
+
+                    // point = point_robot_frame + 2*robot_orientation_w*cross(robot_orientation_v, point_robot_frame) +
+                    // 2*cross(robot_orientation_v, cross(robot_orientation_v, point_robot_frame));
+
+                    // point[0] += robot_position[0];
+                    // point[1] += robot_position[1];
+                    // point[2] += robot_position[2];
+
+                
+                    // if(tree->search(point[0], point[1],point[2])){
+                    //     if(tree->search(point[0], point[1],point[2])->getValue() < 0) subgoal_matrix[m+1-angular_offset][n] = sphere_matrix[m+1][n] + robot_radius*2; 
+                    // }
+
+                    
                 }
-                else if(sphere_matrix[m+1][n] ==0){
+                else if(sphere_matrix[m+1][n] < 0.001){
                     //this means we are at the edge of obstacle
-                    //so case 2 of subgoal location if enough space
-                    if(difference > robot_radius*3 + safety_distance*2){
-                        subgoal_matrix[m+1][n] = sphere_matrix[m][n] + robot_radius*2 + safety_distance;    
-                    }
-                    //otherwise case 1:
-                    else{
-                        subgoal_matrix[m+1][n] = sphere_matrix[m][n] + difference / 2;  
-                    }    
+
+                    subgoal_matrix[m+1][n] = sphere_matrix[m][n] + robot_radius + safety_distance;
+
+                    // phi = (m+1.5) * pi / M - pi/2; // angle at m+1
+                    // theta = (n+0.5) *  pi / M - pi;
+                    // rho = sphere_matrix[m][n] + robot_radius*2;
+                    // r = rho * cos(phi);
+                    // x = r * cos(theta);
+                    // y = r * sin(theta);
+                    // z = rho * sin(phi);
+                    // point_robot_frame[0] = x;
+                    // point_robot_frame[1] = y;
+                    // point_robot_frame[2] = z;
+
+                    // point = point_robot_frame + 2*robot_orientation_w*cross(robot_orientation_v, point_robot_frame) +
+                    // 2*cross(robot_orientation_v, cross(robot_orientation_v, point_robot_frame));
+
+                    // point[0] += robot_position[0];
+                    // point[1] += robot_position[1];
+                    // point[2] += robot_position[2];
+                    // if(tree->search(point[0], point[1],point[2])){
+                    //     if(tree->search(point[0], point[1],point[2])->getValue() < 0) subgoal_matrix[m+angular_offset][n] = sphere_matrix[m][n] + robot_radius*2;
+                    // }   
+                    
                 } 
-                else{
+                else if(difference > 2*robot_radius){
                     //otherwise we're between obstacles
+
+                    // Check here if point is located on surface ..
+                    phi = (m+1) * pi / M - pi/2;// + deg_resolution/2 * pi/180; angle between m and m+1, effectively between m+0.5 and m+1.5
+                    theta = (n+0.5) *  pi / M - pi;
+
+
                     if(sphere_matrix[m][n]<sphere_matrix[m+1][n]){
-                        subgoal_matrix[m+1][n] = sphere_matrix[m][n] + difference/2;
+
+                        rho = sphere_matrix[m][n] + difference/2 + resolution/2;
+                        r = rho * cos(phi);
+                        x = r * cos(theta);
+                        y = r * sin(theta);
+                        z = rho * sin(phi);
+                        point_robot_frame[0] = x;
+                        point_robot_frame[1] = y;
+                        point_robot_frame[2] = z;
+
+                        point = point_robot_frame + 2*robot_orientation_w*cross(robot_orientation_v, point_robot_frame) +
+                        2*cross(robot_orientation_v, cross(robot_orientation_v, point_robot_frame));
+
+                        point[0] += robot_position[0];
+                        point[1] += robot_position[1];
+                        point[2] += robot_position[2];
+
+                        //points_checked_msg->points.push_back(pcl::PointXYZ(point[0], point[1],point[2]));
+
+                        if(!tree->search(point[0], point[1],point[2])) subgoal_matrix[m+1][n] = rho-resolution/2;
+                        else if(tree->search(point[0], point[1],point[2])->getValue() < 0) subgoal_matrix[m+1][n] = rho-resolution/2;
+                        // if(tree->search(point[0], point[1],point[2])){
+                        //     if(tree->search(point[0], point[1],point[2])->getValue() < 0) subgoal_matrix[m+angular_offset][n] = rho-resolution/2; 
+                        // }
+                    
                     }
                     else{
-                        subgoal_matrix[m][n] = sphere_matrix[m+1][n] + difference/2;
+
+                        rho = sphere_matrix[m+1][n] + difference/2 + resolution/2;
+                        r = rho * cos(phi);
+                        x = r * cos(theta);
+                        y = r * sin(theta);
+                        z = rho * sin(phi);
+                        point_robot_frame[0] = x;
+                        point_robot_frame[1] = y;
+                        point_robot_frame[2] = z;
+
+                        point = point_robot_frame + 2*robot_orientation_w*cross(robot_orientation_v, point_robot_frame) +
+                        2*cross(robot_orientation_v, cross(robot_orientation_v, point_robot_frame));
+
+                        point[0] += robot_position[0];
+                        point[1] += robot_position[1];
+                        point[2] += robot_position[2];
+
+                        //points_checked_msg->points.push_back(pcl::PointXYZ(point[0], point[1],point[2]));
+
+                        if(!tree->search(point[0], point[1],point[2])) subgoal_matrix[m][n] = rho-resolution/2;
+                        else if(tree->search(point[0], point[1],point[2])->getValue() < 0) subgoal_matrix[m][n] = rho-resolution/2;
+                        // if(tree->search(point[0], point[1],point[2])){
+                        //     if(tree->search(point[0], point[1],point[2])->getValue() < 0) subgoal_matrix[m+1-angular_offset][n] = rho-resolution/2;
+                        // }
+                    
                     }
-                } 
+                }
+                //if(angular_offset < 1) cout << "angular offset is: " << angular_offset << " in m difference" << endl;
+                //cout << "angular_offset for m: " << angular_offset << endl;
             }
             //}
         }
@@ -962,14 +1222,13 @@ void OctomapToSpherical::octoMapCallback(const octomap_msgs::OctomapConstPtr& oc
         // --------------To locate sub goals a little from the boundary: -----------------
 
 
-
     /*PointCloud::Ptr points_checked_msg (new PointCloud);
     points_checked_msg->header.frame_id = "/world";
     points_checked_msg->height = 1;
 */
 
     //max is like 27-41 for M = 60
-    int m_min = 1;//M * 20/60;
+    /*int m_min = 1;//M * 20/60;
     int m_max = M-1; //M * 40/60;
 
     //cout << "m min " << m_min << " m max " << m_max << " M " << M << endl;
@@ -982,7 +1241,7 @@ void OctomapToSpherical::octoMapCallback(const octomap_msgs::OctomapConstPtr& oc
 
             //Check horizontal difference:
             difference = abs(sphere_matrix[m][n]-sphere_matrix[m][n+1]);
-            if(difference > 0 ){// - (robot_radius + safety_distance)) >0.001){ 
+            if(difference > 0){// - (robot_radius + safety_distance)) >0.001){ 
             //sphere_matrix[m][n+1] != robot_radius + safety_distance){
 
 
@@ -990,6 +1249,7 @@ void OctomapToSpherical::octoMapCallback(const octomap_msgs::OctomapConstPtr& oc
                 if(sphere_matrix[m][n] < 0.0001){  //just to get rid of some dumb ass floating point error
                     //this means we are at the edge of obstacle
                     // and sphere_matrix[m][n] in back
+                    
                     subgoal_matrix[m][n-1] = sphere_matrix[m][n+1] + robot_radius*2 + safety_distance;
        
                 }
@@ -1131,17 +1391,435 @@ void OctomapToSpherical::octoMapCallback(const octomap_msgs::OctomapConstPtr& oc
             }
             //}
         }
+    }*/
+
+
+// --------------To locate sub goals exactly as much from the boundary as needed: -----------------
+
+    /*PointCloud::Ptr points_checked_msg (new PointCloud);
+    points_checked_msg->header.frame_id = "/world";
+    points_checked_msg->height = 1;
+*/
+
+    //max is like 27-41 for M = 60
+    int m_min = 1;//M * 20/60;
+    int m_max = M-1; //M * 40/60;
+
+    double angular_offset_factor = resolution/(sin(deg_resolution*pi/180)) *1.4142;// consider using Cspace resolution instead of octomap resolution...
+    //cout << "angular_offset_factor : " << angular_offset_factor << endl;
+    int angular_offset;
+
+    //cout << "m min " << m_min << " m max " << m_max << " M " << M << endl;
+    // or we could omit sub goals where there is unknown in the octomap.. 
+    for( m = m_min ; m < m_max ; m++){  //max is like 27-41 for M = 60
+        for( n = 0; n< N-1 ; n++){ //and 50 - 68 for N = 120
+
+            //To make sure we're not on the edge of view of the camera:
+            //if(sphere_matrix[m][n] != 0){//robot_radius + safety_distance){
+
+            //Check horizontal difference:
+            difference = abs(sphere_matrix[m][n]-sphere_matrix[m][n+1]);
+            if(difference > 0.01){// - (robot_radius + safety_distance)) >0.001){ 
+            //sphere_matrix[m][n+1] != robot_radius + safety_distance){
+
+
+                phi = (m+0.5) * pi / M - pi/2;
+
+                if(sphere_matrix[m][n] < 0.0001){  //just to get rid of some dumb ass floating point error
+                    //this means we are at the edge of obstacle
+                    // and sphere_matrix[m][n] in back
+                    angular_offset = ceil(angular_offset_factor / (sphere_matrix[m][n+1]*cos(phi)));
+                    if(n+1-angular_offset > -1){
+                        //subgoal_matrix[m][n+1-angular_offset] = sphere_matrix[m][n+1] + robot_radius*2 + safety_distance; // ORIGINAL
+                        
+                        //to only locate sub goals where we have free space in octomap:
+                        theta = (n+1-angular_offset+0.5) * pi / M - pi + deg_resolution/2 * pi/180; // angle at n  THIS IS BULLSHIT I THINK, REVISE.. 
+                        rho = sphere_matrix[m][n+1] + robot_radius;//+ robot_radius*2; // Depending on where we want the free space
+                        r = rho * cos(phi);
+                        x = r * cos(theta);
+                        y = r * sin(theta);
+                        z = rho * sin(phi);
+                        point_robot_frame[0] = x;
+                        point_robot_frame[1] = y;
+                        point_robot_frame[2] = z;
+
+                        point = point_robot_frame + 2*robot_orientation_w*cross(robot_orientation_v, point_robot_frame) +
+                        2*cross(robot_orientation_v, cross(robot_orientation_v, point_robot_frame));
+
+                        point[0] += robot_position[0];
+                        point[1] += robot_position[1];
+                        point[2] += robot_position[2];
+
+                        // Check in a simple manner if sub goal located on floor:
+                        // This is assuming robot is aligned with floor.. not tilted... 
+                        rho = sphere_matrix[m][n+1] +resolution/2;
+                        z = rho * sin(phi);
+                        double height_from_ground =  z + robot_position[2];
+                        
+                        if(height_from_ground > 0.15){ // just so we do not locate subgoals on the ground
+                            if(tree->search(point[0], point[1],point[2])){  
+                                if(tree->search(point[0], point[1],point[2])->getValue() < 0){ 
+                                    //cout << "here 1" << endl;
+                                    subgoal_matrix[m][n+1-angular_offset] = sphere_matrix[m][n+1] + robot_radius*2;// + safety_distance;
+                                }
+                            }
+                        }
+                    } 
+                }
+                else if(sphere_matrix[m][n+1] < 0.0001){
+                    //this means we are at the edge of obstacle
+
+                    angular_offset = ceil(angular_offset_factor / (sphere_matrix[m][n]*cos(phi))); 
+                    if(n+angular_offset < N){
+                        //subgoal_matrix[m][n+angular_offset] = sphere_matrix[m][n] + robot_radius*2 + safety_distance;
+
+                        //to only locate sub goals where we have free space in octomap:
+                        theta = (n+angular_offset+1.5) * pi / M - pi + deg_resolution/2 * pi/180; // angle at n+1 ...
+                        rho = sphere_matrix[m][n] + robot_radius;//+ robot_radius*2; // Depending on where we want the free space
+                        r = rho * cos(phi);
+                        x = r * cos(theta);
+                        y = r * sin(theta);
+                        z = rho * sin(phi);
+                        point_robot_frame[0] = x;
+                        point_robot_frame[1] = y;
+                        point_robot_frame[2] = z;
+
+                        point = point_robot_frame + 2*robot_orientation_w*cross(robot_orientation_v, point_robot_frame) +
+                        2*cross(robot_orientation_v, cross(robot_orientation_v, point_robot_frame));
+
+                        point[0] += robot_position[0];
+                        point[1] += robot_position[1];
+                        point[2] += robot_position[2];
+
+                        // Check in a simple manner if sub goal located on floor:
+                        rho = sphere_matrix[m][n]+resolution/2;
+                        z = rho * sin(phi);
+                        double height_from_ground =  z + robot_position[2];
+
+                        if(height_from_ground > 0.15){ // just so we do not locate subgoals on the ground
+                            if(tree->search(point[0], point[1],point[2])){
+                                //cout << "here 2" << endl;
+                                if(tree->search(point[0], point[1],point[2])->getValue() < 0) subgoal_matrix[m][n+angular_offset] = sphere_matrix[m][n] + robot_radius*2;
+                            }
+                        }
+                    }
+                } 
+                else if(difference > 2*robot_radius){
+                    // this means that there is enough difference between these points to count
+                    // as subgoal points...
+                    //otherwise we're between obstacles
+                    // Check here if point is located on surface .. 
+                    
+                    theta = (n+1) *  pi / M - pi + deg_resolution/2 * pi/180;
+
+                    if(sphere_matrix[m][n]<sphere_matrix[m][n+1]){
+                        
+                        rho = sphere_matrix[m][n] + difference/2 + resolution/2;
+                        r = rho * cos(phi);
+                        x = r * cos(theta);
+                        y = r * sin(theta);
+                        z = rho * sin(phi);
+                        point_robot_frame[0] = x;
+                        point_robot_frame[1] = y;
+                        point_robot_frame[2] = z;
+
+                        point = point_robot_frame + 2*robot_orientation_w*cross(robot_orientation_v, point_robot_frame) +
+                        2*cross(robot_orientation_v, cross(robot_orientation_v, point_robot_frame));
+
+                        point[0] += robot_position[0];
+                        point[1] += robot_position[1];
+                        point[2] += robot_position[2];
+
+                        //points_checked_msg->points.push_back(pcl::PointXYZ(point[0], point[1],point[2]));
+
+                        angular_offset = ceil(angular_offset_factor / (sphere_matrix[m][n]*cos(phi)) );
+
+                        //if(point[2] > 0.1){ // just so we do not locate subgoals on the ground
+                        if(n+angular_offset < N){
+                            //cout << "here 3" << endl;
+                            if(!tree->search(point[0], point[1],point[2])) subgoal_matrix[m][n+angular_offset] = rho-resolution/2;
+                            else if(tree->search(point[0], point[1],point[2])->getValue() < 0) subgoal_matrix[m][n+angular_offset] = rho-resolution/2;
+                            // if(tree->search(point[0], point[1],point[2])){
+                            //     if(tree->search(point[0], point[1],point[2])->getValue() < 0) subgoal_matrix[m][n+angular_offset] = rho-resolution/2;
+                            // }
+                        }
+                        //}
+
+                    }
+                    else{
+
+                        rho = sphere_matrix[m][n+1] + difference/2 + resolution/2;
+                        r = rho * cos(phi);
+                        x = r * cos(theta);
+                        y = r * sin(theta);
+                        z = rho * sin(phi);
+                        point_robot_frame[0] = x;
+                        point_robot_frame[1] = y;
+                        point_robot_frame[2] = z;
+
+                        point = point_robot_frame + 2*robot_orientation_w*cross(robot_orientation_v, point_robot_frame) +
+                        2*cross(robot_orientation_v, cross(robot_orientation_v, point_robot_frame));
+
+                        point[0] += robot_position[0];
+                        point[1] += robot_position[1];
+                        point[2] += robot_position[2];
+
+                        //points_checked_msg->points.push_back(pcl::PointXYZ(point[0], point[1],point[2]));
+
+                        angular_offset = ceil(angular_offset_factor / (sphere_matrix[m][n+1]*cos(phi)) );
+
+                        //if(point[2] > 0.1){ // just so we do not locate subgoals on the ground
+                        if(n+1-angular_offset > -1){
+                            //cout << "here 4" << endl; 
+                            if(!tree->search(point[0], point[1],point[2])) subgoal_matrix[m][n+1-angular_offset] = rho-resolution/2;
+                            else if(tree->search(point[0], point[1],point[2])->getValue() < 0) subgoal_matrix[m][n+1-angular_offset] = rho-resolution/2; 
+                            // if(tree->search(point[0], point[1],point[2])){
+                            //     if(tree->search(point[0], point[1],point[2])->getValue() < 0) subgoal_matrix[m][n+1-angular_offset] = rho-resolution/2;
+                            
+                            // }   
+                        }
+                       // }
+                    }
+                } 
+                //if(angular_offset < 1) cout << "angular offset is: " << angular_offset << " in n difference" << endl;
+                //cout << "angular_offset for n: " << angular_offset << endl;
+            }
+
+            //Check vertical difference:
+            difference = abs(sphere_matrix[m][n]-sphere_matrix[m+1][n]);
+            if(difference > 0.01){
+                // this means that there is enough difference between these points to count
+                // as subgoal points...
+
+                if(sphere_matrix[m][n] < 0.001){
+                    //this means we are at the edge of obstacle
+
+                    angular_offset = ceil(angular_offset_factor / sphere_matrix[m+1][n]);
+                    if(m+1-angular_offset>-1){ 
+                        //subgoal_matrix[m+1-angular_offset][n] = sphere_matrix[m+1][n] + robot_radius*2 + safety_distance; // original...
+
+                        phi = (m+0.5) * pi / M - pi/2; // angle at m
+                        theta = (n+0.5) *  pi / M - pi;
+                        rho = sphere_matrix[m+1][n] + robot_radius;//*2; // Depending on where we want the free space
+                        r = rho * cos(phi);
+                        x = r * cos(theta);
+                        y = r * sin(theta);
+                        z = rho * sin(phi);
+                        point_robot_frame[0] = x;
+                        point_robot_frame[1] = y;
+                        point_robot_frame[2] = z;
+
+                        point = point_robot_frame + 2*robot_orientation_w*cross(robot_orientation_v, point_robot_frame) +
+                        2*cross(robot_orientation_v, cross(robot_orientation_v, point_robot_frame));
+
+                        point[0] += robot_position[0];
+                        point[1] += robot_position[1];
+                        point[2] += robot_position[2];
+
+
+                        // To check if sphere_matrix[m+1][n] is located on floor....
+                        // double rho_at_m, phi_at_m;
+                        // phi_at_m = (m+1.5) * pi / M - pi/2;// angle at m to see if it is the floor 
+                        // rho_at_m = sphere_matrix[m+1][n] + resolution/2;
+
+                        // Vector3d point_m;
+                        // r = rho_at_m * cos(phi_at_m);
+                        // x = r * cos(theta);
+                        // y = r * sin(theta);
+                        // z = rho_at_m * sin(phi_at_m);
+                        // point_robot_frame[0] = x;
+                        // point_robot_frame[1] = y;
+                        // point_robot_frame[2] = z;   
+
+                        // point_m = point_robot_frame + 2*robot_orientation_w*cross(robot_orientation_v, point_robot_frame) +
+                        // 2*cross(robot_orientation_v, cross(robot_orientation_v, point_robot_frame));
+                        // point_m[0] += robot_position[0];
+                        // point_m[1] += robot_position[1];
+                        // point_m[2] += robot_position[2];
+
+                        // Check in a simple manner if sub goal located on floor:
+                        rho = sphere_matrix[m+1][n] + resolution/2;
+                        phi = (m+1.5) * pi / M - pi/2;// angle at m to see if it is the floor 
+                        z = rho * sin(phi);
+                        double height_from_ground =  z + robot_position[2];
+
+                        if(height_from_ground > 0.2){
+                        //if(point_m[2] > 0.15){ // just so we do not locate subgoals on the ground
+                            //cout << "whats up" << endl;
+                            if(tree->search(point[0], point[1],point[2])){
+                                if(tree->search(point[0], point[1],point[2])->getValue() < 0) subgoal_matrix[m+1-angular_offset][n] = sphere_matrix[m+1][n] + robot_radius*2; 
+                            }    
+                        }
+                        
+
+                    }
+                }
+                else if(sphere_matrix[m+1][n] < 0.001){
+                    //this means we are at the edge of obstacle
+                    
+                    angular_offset = ceil(angular_offset_factor / sphere_matrix[m][n]);
+                    if(m+angular_offset<M){ 
+                        //subgoal_matrix[m+angular_offset][n] = sphere_matrix[m][n] + robot_radius*2 + safety_distance;
+
+                        phi = (m+1.5) * pi / M - pi/2; // angle at m+1 why 
+                        theta = (n+0.5) *  pi / M - pi;
+                        rho = sphere_matrix[m][n] + robot_radius;//*2; // Depending on where we want the free space
+                        r = rho * cos(phi);
+                        x = r * cos(theta);
+                        y = r * sin(theta);
+                        z = rho * sin(phi);
+                        point_robot_frame[0] = x;
+                        point_robot_frame[1] = y;
+                        point_robot_frame[2] = z;   
+
+                        point = point_robot_frame + 2*robot_orientation_w*cross(robot_orientation_v, point_robot_frame) +
+                        2*cross(robot_orientation_v, cross(robot_orientation_v, point_robot_frame));
+
+                        point[0] += robot_position[0];
+                        point[1] += robot_position[1];
+                        point[2] += robot_position[2];
+
+                        // To check if sphere_matrix[m][n] is located on floor....
+                        // double rho_at_m, phi_at_m;
+                        // phi_at_m = (m) * pi / M - pi/2;// angle at m to see if it is the floor 
+                        // rho_at_m = sphere_matrix[m][n] + resolution/2;
+
+                        // Vector3d point_m;
+                        // r = rho_at_m * cos(phi_at_m);
+                        // x = r * cos(theta);
+                        // y = r * sin(theta);
+                        // z = rho_at_m * sin(phi_at_m);
+                        // point_robot_frame[0] = x;
+                        // point_robot_frame[1] = y;
+                        // point_robot_frame[2] = z;   
+
+                        // point_m = point_robot_frame + 2*robot_orientation_w*cross(robot_orientation_v, point_robot_frame) +
+                        // 2*cross(robot_orientation_v, cross(robot_orientation_v, point_robot_frame));
+                        // point_m[0] += robot_position[0];
+                        // point_m[1] += robot_position[1];
+                        // point_m[2] += robot_position[2];
+
+                        
+                        // //cout << "point at m, z: " << point_m[2] << endl;
+                        // bool statement = point_m[2] > 0.15;
+
+                        // cout << "point at m, z: " << point_m[2] << "statement: " <<statement << endl;
+
+                        // Check in a simple manner if sub goal located on floor:
+                        rho = sphere_matrix[m][n] + resolution/2;
+                        phi = (m) * pi / M - pi/2;// angle at m to see if it is the floor
+                        z = rho * sin(phi);
+                        double height_from_ground =  z + robot_position[2];
+
+                        bool statement = height_from_ground > 0.15;
+
+                        //cout << "height_from_ground: " << height_from_ground << "statement: " <<statement << endl;
+
+                        if(height_from_ground > 0.2){
+                        //if(point_m[2] > 0.15){ // just so we do not locate subgoals on the ground 
+                            //cout << "here in if statement" <<endl;
+                            if(tree->search(point[0], point[1],point[2])){
+                                if(tree->search(point[0], point[1],point[2])->getValue() < 0) subgoal_matrix[m+angular_offset][n] = sphere_matrix[m][n] + robot_radius*2;
+                                //cout <<"yo !!!!!!!!!!!!!!1"  << endl;
+                            }   
+                        }
+                    }
+                } 
+                else if(difference > 2*robot_radius){
+                    //otherwise we're between obstacles
+
+                    // Check here if point is located on surface ..
+                    //phi = (m+1) * pi / M - pi/2;// + deg_resolution/2 * pi/180; angle between m and m+1, effectively between m+0.5 and m+1.5
+                    theta = (n+0.5) *  pi / M - pi;
+
+
+                    if(sphere_matrix[m][n]<sphere_matrix[m+1][n]){
+
+                        // Try just checking if sphere_matrix[m][n] is on ground... 
+
+                        phi = (m+0.5) * pi / M - pi/2;
+
+                        rho = sphere_matrix[m][n] + resolution/2;//+ difference/2 + resolution/2;
+                        r = rho * cos(phi);
+                        x = r * cos(theta);
+                        y = r * sin(theta);
+                        z = rho * sin(phi);
+                        point_robot_frame[0] = x;
+                        point_robot_frame[1] = y;
+                        point_robot_frame[2] = z;
+
+                        point = point_robot_frame + 2*robot_orientation_w*cross(robot_orientation_v, point_robot_frame) +
+                        2*cross(robot_orientation_v, cross(robot_orientation_v, point_robot_frame));
+
+                        point[0] += robot_position[0];
+                        point[1] += robot_position[1];
+                        point[2] += robot_position[2];
+
+                        //points_checked_msg->points.push_back(pcl::PointXYZ(point[0], point[1],point[2]));
+                        angular_offset = ceil(angular_offset_factor / sphere_matrix[m][n]);
+                        if(point[2] > 0.15){ // just so we do not locate subgoals on the ground
+                            if(m+angular_offset<M){
+                                //cout << "here 5" << endl;
+                                subgoal_matrix[m+angular_offset][n] = rho + difference/2 + resolution/2;
+
+                                //if(!tree->search(point[0], point[1],point[2])) subgoal_matrix[m+angular_offset][n] = rho-resolution/2;
+                                //else if(tree->search(point[0], point[1],point[2])->getValue() < 0) subgoal_matrix[m+angular_offset][n] = rho-resolution/2;
+                                // if(tree->search(point[0], point[1],point[2])){
+                                //     if(tree->search(point[0], point[1],point[2])->getValue() < 0) subgoal_matrix[m+angular_offset][n] = rho-resolution/2; 
+                                // }
+                            }
+                        }
+                    }
+                    else{
+
+                        phi = (m+1.5) * pi / M - pi/2;
+
+                        rho = sphere_matrix[m+1][n] + difference/2 + resolution/2;
+                        r = rho * cos(phi);
+                        x = r * cos(theta);
+                        y = r * sin(theta);
+                        z = rho * sin(phi);
+                        point_robot_frame[0] = x;
+                        point_robot_frame[1] = y;
+                        point_robot_frame[2] = z;
+
+                        point = point_robot_frame + 2*robot_orientation_w*cross(robot_orientation_v, point_robot_frame) +
+                        2*cross(robot_orientation_v, cross(robot_orientation_v, point_robot_frame));
+
+                        point[0] += robot_position[0];
+                        point[1] += robot_position[1];
+                        point[2] += robot_position[2];
+
+                        //points_checked_msg->points.push_back(pcl::PointXYZ(point[0], point[1],point[2]));
+                        //if(point[2] > 0.1){ // just so we do not locate subgoals on the ground
+                        angular_offset = ceil(angular_offset_factor / sphere_matrix[m+1][n]);
+                        if(m+1-angular_offset>-1){
+                            //cout << "here 6" << endl;
+                            if(!tree->search(point[0], point[1],point[2])) subgoal_matrix[m+1-angular_offset][n] = rho-resolution/2;
+                            else if(tree->search(point[0], point[1],point[2])->getValue() < 0) subgoal_matrix[m+1-angular_offset][n] = rho-resolution/2;
+                            // if(tree->search(point[0], point[1],point[2])){
+                            //     if(tree->search(point[0], point[1],point[2])->getValue() < 0) subgoal_matrix[m+1-angular_offset][n] = rho-resolution/2;
+                            // }
+                        }
+                        //}
+                    }
+                }
+                //if(angular_offset < 1) cout << "angular offset is: " << angular_offset << " in m difference" << endl;
+                //cout << "angular_offset for m: " << angular_offset << endl;
+            }
+            //}
+        }
     }
 
 
-/*
-    points_checked_msg->width = points_checked_msg->size();
+
+    /*points_checked_msg->width = points_checked_msg->size();
     // Convert to ROS data type
     sensor_msgs::PointCloud2 points_checked_output;
     pcl::toROSMsg(*points_checked_msg, points_checked_output);
     // Publish the data
-    pub_points_checked_cloud.publish (points_checked_output);
-  */  
+    pub_points_checked_cloud.publish (points_checked_output);*/
+   
 
     /*std_msgs::Float32MultiArray dat1;
     int H = M;
@@ -1180,12 +1858,14 @@ void OctomapToSpherical::octoMapCallback(const octomap_msgs::OctomapConstPtr& oc
     std::vector<float> vec(W*H, 0);
     for (int i=0; i<M; i++)
         for (int j=0; j<W; j++)
-            //vec[i*W + j] = sphere_matrix[i][j];
-            vec[i*W + j] = sphere_matrix_with_unknown[i][j];
-
-    for (int i=M; i<H; i++)
+            vec[i*W + j] = sphere_matrix[i][j];
+            //vec[i*W + j] = sphere_matrix_with_unknown[i][j];
+    for (int i=M; i<M*2; i++)
         for (int j=0; j<W; j++)
             vec[i*W + j] = subgoal_matrix[i-M][j];
+    // for (int i=M*2; i<M*3; i++)
+    //     for (int j=0; j<W; j++)
+    //         vec[i*W + j] = sphere_matrix[i-M*2][j];
         
     dat.data = vec;
 
@@ -1267,6 +1947,33 @@ Vector3d OctomapToSpherical::cross(const Vector3d & vec1, const Vector3d & vec2)
     
     return ( cross_product );
 }
+
+float OctomapToSpherical::dot(const Vector3d & vec1, const Vector3d & vec2){
+    
+    return ( vec1[0]*vec2[0] + vec1[1]*vec2[1] + vec1[2]*vec2[2] );
+}
+
+/*tf::Vector3 OctomapToSpherical::tf_multiply(Quaternion quat, Vector3 vec){
+     float num = quat.x * 2f;
+     float num2 = quat.y * 2f;
+     float num3 = quat.z * 2f;
+     float num4 = quat.x * num;
+     float num5 = quat.y * num2;
+     float num6 = quat.z * num3;
+     float num7 = quat.x * num2;
+     float num8 = quat.x * num3;
+     float num9 = quat.y * num3;
+     float num10 = quat.w * num;
+     float num11 = quat.w * num2;
+     float num12 = quat.w * num3;
+     Vector3 result;
+     result.x = (1f - (num5 + num6)) * vec.x + (num7 - num12) * vec.y + (num8 + num11) * vec.z;
+     result.y = (num7 + num12) * vec.x + (1f - (num4 + num6)) * vec.y + (num9 - num10) * vec.z;
+     result.z = (num8 - num11) * vec.x + (num9 + num10) * vec.y + (1f - (num4 + num5)) * vec.z;
+     return result;
+ }*/
+
+
 
 int main(int argc, char** argv) 
 {

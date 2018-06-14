@@ -30,7 +30,9 @@ RobotControl::RobotControl(ros::NodeHandle* nodehandle):nh_(*nodehandle)
     // robot_diameter = 0.7;//0.8;
     robot_radius = 0.4;
     robot_diameter = 0.8;
-    safety_distance = 0.4;
+    // This is velocity safety distance:
+    velocity_safety_distance = 1.2;
+
     max_sonar_range = 6;
     radius_sq = pow(robot_radius,2);
     diameter_sq = pow(robot_radius*2,2);
@@ -48,8 +50,8 @@ RobotControl::RobotControl(ros::NodeHandle* nodehandle):nh_(*nodehandle)
     N = spherical_matrix_width;
 
     // Set maximum translational and angular velocity
-    v_max = 0.3; // meters per second maximum translational velocity
-    omega_max = pi/4; // rad/sec maximum angular velocity
+    v_max = 0.4; // meters per second maximum translational setpoint_velocity     0.2    0.13
+    omega_max = pi/6;//pi/4; // rad/sec maximum angular                            pi/6  pi/10
 
     //nearest_obstacle_distance = 5; // just initialize as something 
 
@@ -64,6 +66,10 @@ RobotControl::RobotControl(ros::NodeHandle* nodehandle):nh_(*nodehandle)
     range_up = 6;
     sonar_down_limit = 6;
     range_down = 0;
+
+    fixed_position[0] = 0;
+    fixed_position[1] = 0;
+    fixed_position[2] = 1;
 
     // can also do tests/waits to make sure all required services, topics, etc are alive
 }
@@ -88,6 +94,9 @@ void RobotControl::initializeSubscribers()
     target_position_sub_ = nh_.subscribe("/target_position", 1, &RobotControl::targetPositionCallback, this);
 
     robot_position_sub_ = nh_.subscribe("/mavros/local_position/pose", 1, &RobotControl::robotPositionCallback, this);
+
+    robot_local_velocity_sub = nh_.subscribe("/mavros/local_position/odom", 1, &RobotControl::robotLocalVelocityCallback, this);
+
 }
 
 /*
@@ -133,16 +142,19 @@ void RobotControl::sphericalMatrixCallback(const std_msgs::Float32MultiArray::Co
     float dstride0 = matrix_msg->layout.dim[0].stride;
     float dstride1 = matrix_msg->layout.dim[1].stride;
     nearest_obstacle_distance = 100;
-    for (m = 1; m< M ; m++){ // to get rid of some shit values at m=1 ...
+    //for (m = M*2 +1; m< M*3 ; m++){ // to get rid of some shit values at m=1 ...
+    for (m = 1; m< M ; m++){
         for (n = 0; n< N ; n++){
             //sphere_matrix[m][n] = matrix_msg->data[m*dstride1 + n];
-            if(matrix_msg->data[m*dstride1 + n] < nearest_obstacle_distance && matrix_msg->data[m*dstride1 + n] > 0 ) {
+            if(matrix_msg->data[m*dstride1 + n] < nearest_obstacle_distance && matrix_msg->data[m*dstride1 + n] > 0.001 ) {
                 nearest_obstacle_distance = matrix_msg->data[m*dstride1 + n];
                 nearest_obstacle_distance_n = n;
                 nearest_obstacle_distance_m = m;
             }
         } 
     }
+    cout << "nearest_obstacle_distance: " << nearest_obstacle_distance << endl; 
+
 }
 
 /*void RobotControl::directionVectorCallback(const geometry_msgs::Vector3ConstPtr& input) {
@@ -163,8 +175,22 @@ void RobotControl::goalPositionCallback(const geometry_msgs::Vector3ConstPtr& in
 	goal_position[0] = input->x;
 	goal_position[1] = input->y;
 	goal_position[2] = input->z;
+    if(!goal_point){
+        start_time =ros::Time::now().toSec();
+        goal_point = true;
+    }
+	
+}
 
-	goal_point = true;
+void RobotControl::robotLocalVelocityCallback(const nav_msgs::OdometryConstPtr& input) {
+
+    local_robot_translational_velocity[0] = input->twist.twist.linear.x;
+    local_robot_translational_velocity[1] = input->twist.twist.linear.y;
+    local_robot_translational_velocity[2] = input->twist.twist.linear.z;
+
+    // local_robot_angular_velocity[0] = input->twist.twist.angular.x;
+    // local_robot_angular_velocity[1] = input->twist.twist.angular.y;
+    // local_robot_angular_velocity[2] = input->twist.twist.angular.z;
 }
 
 /*void RobotControl::usolCallback(const geometry_msgs::Vector3ConstPtr& input){
@@ -262,6 +288,7 @@ void RobotControl::robotPositionCallback(const geometry_msgs::PoseStampedConstPt
             cout << "goal reached!" << endl;
             
             if(!goal_reached){
+                fixed_position = robot_position;
 
             	q[0] = robot_orientation[0];
             	q[1] = robot_orientation[1];
@@ -321,9 +348,10 @@ void RobotControl::robotPositionCallback(const geometry_msgs::PoseStampedConstPt
 
             
 
-            if(orm_control && (abs(direction_vector[0])+abs(direction_vector[1])+abs(direction_vector[2]) > 0.2 || abs(direction_vector[2] / (abs(direction_vector[0])+abs(direction_vector[1])+abs(direction_vector[2]))) > 0.85)){
+            if((orm_control && (abs(direction_vector[0])+abs(direction_vector[1])+abs(direction_vector[2]) > 0.2 || 
+                abs(direction_vector[2] / (abs(direction_vector[0])+abs(direction_vector[1])+abs(direction_vector[2]))) > 0.85)) && ros::Time::now().toSec() - start_time > 4){
                 // do the orm control
-                cout << "in orm control" << endl;
+                //cout << "in orm control" << endl;
                 
                 // okay let's try flying directly forward, it can be up or down, but not to the sides...
                 // and just turn the robot...
@@ -333,6 +361,7 @@ void RobotControl::robotPositionCallback(const geometry_msgs::PoseStampedConstPt
             	// theta needs to be the difference of the angle of robot and the target angle in xy plane...
                 // u sol is in robot frame...
                 double yaw_desired = atan2(direction_vector[1], direction_vector[0]);
+                if(abs(direction_vector[0] / (abs(direction_vector[0])+abs(direction_vector[1])+abs(direction_vector[2]))) > 0.95 && direction_vector[0] < 0) yaw_desired = pi;
 
                 q[0] = robot_orientation[0];
             	q[1] = robot_orientation[1];
@@ -346,6 +375,7 @@ void RobotControl::robotPositionCallback(const geometry_msgs::PoseStampedConstPt
 
                 theta = yaw_desired - yaw;//atan2(u_sol[1], u_sol[0]);
 
+                //cout << "yaw: "<<yaw << "yaw_desired: " << yaw_desired << "theta: " << theta <<endl;
 
                 /*acos(u_sol[0]/xy_length_of_u_sol);
                 if(u_sol[1] < 0){
@@ -382,13 +412,22 @@ void RobotControl::robotPositionCallback(const geometry_msgs::PoseStampedConstPt
                 else if(theta > pi) theta -= 2*pi;
 
 
-               	if(nearest_obstacle_distance < robot_radius + 0.10){
+               	if(nearest_obstacle_distance < robot_radius ){ // + 0.05
                		// very close to obstacle, fly in opposite direction.. 
                		set_velocity.header.frame_id = "base_link";
                     set_velocity.header.stamp = ros::Time::now();
+                    
+
                     double theta_close_obstacle, phi_close_obstacle, r_close_obstacle;
 
-                    v= 0.05;
+
+                    if(robot_position[2] < 0.3){
+                        v=v_max;
+                    }
+                    else{
+                        v = (robot_radius - nearest_obstacle_distance)*0.3 +0.02; //+0.01   
+                    }
+                    
                		theta_close_obstacle = nearest_obstacle_distance_n *  pi / M - pi;
 					phi_close_obstacle = nearest_obstacle_distance_m * pi / M - pi/2;
 					r_close_obstacle = cos(phi_close_obstacle);
@@ -418,13 +457,36 @@ void RobotControl::robotPositionCallback(const geometry_msgs::PoseStampedConstPt
 	                //cout << "theta in orm: " << theta << endl;
 	                if(abs(theta) > 10 * pi / 180 && abs(direction_vector[2] / (abs(direction_vector[0])+abs(direction_vector[1])+abs(direction_vector[2]))) < 0.85){
 	                    // turn the robot..
+                        // JUST COMMENTED THIS OUT:....
 	                    if(!orm_turn_mode){
-	                        fixed_position = robot_position;
-	                        if(fixed_position[2] <0.6){
-	                        	fixed_position[2] = 0.7;
-	                        }
-	                        orm_turn_mode = true;
+                            if(pow(local_robot_translational_velocity[0], 2) + pow(local_robot_translational_velocity[1], 2) + pow(local_robot_translational_velocity[2], 2) < 0.0004){ // if velocity less than 2cm
+                                fixed_position = robot_position;
+                                if(fixed_position[2] <0.5){
+                                    fixed_position[2] = 0.5;
+                                }
+                                orm_turn_mode = true;
+                            }
+
+                            set_velocity.twist.linear.x = 0;//fixed_position[0] - robot_position[0]; try without fixed position
+                            set_velocity.twist.linear.y = 0;//fixed_position[1] - robot_position[1];
+                        
+                            if(robot_position[2] < 0.5){
+                                set_velocity.twist.linear.z = 0.5 - robot_position[2];
+                            }
+                            else{
+                                set_velocity.twist.linear.z =0;
+                            }
+                            // else{
+                            //     // just do zero velocity .. 
+                            // }
+	                        
 	                    }
+                        else{
+                            // now follow fixed position
+                            set_velocity.twist.linear.x = 0.3*(fixed_position[0] - robot_position[0]); 
+                            set_velocity.twist.linear.y = 0.3*(fixed_position[1] - robot_position[1]);
+                            set_velocity.twist.linear.z = 0.3*(fixed_position[2] - robot_position[2]);
+                        }
 	                    
 	                    // if using pose command:
 	                    /*set_pose.header.frame_id = "map";
@@ -493,12 +555,36 @@ void RobotControl::robotPositionCallback(const geometry_msgs::PoseStampedConstPt
 	                    }*/
 
 	                    omega = omega_max * theta / half_pi;
-	                	set_velocity.twist.linear.x = fixed_position[0] - robot_position[0];
-	                	set_velocity.twist.linear.y = fixed_position[1] - robot_position[1];
-	                	set_velocity.twist.linear.z = fixed_position[2] - robot_position[2];
-	                    set_velocity.twist.angular.x = 0;
-	                    set_velocity.twist.angular.y = 0;
-	                    set_velocity.twist.angular.z = omega;
+	                	
+                        // Try one more thing, only register fixed position when robot has stopped...
+
+                        set_velocity.twist.angular.x = 0;
+                        set_velocity.twist.angular.y = 0;
+                        set_velocity.twist.angular.z = omega;
+
+                        // // Allow for some drift but not too much:
+                        // double distance_from_fixed_position_sq = pow((fixed_position[0] - robot_position[0]),2) + pow((fixed_position[1] - robot_position[1]),2) + pow((fixed_position[2] - robot_position[2]),2);
+                        // if(distance_from_fixed_position_sq < 0.01){// less than 10 cm away from fixed position.. 
+                        //     set_velocity.twist.linear.x = 0;//fixed_position[0] - robot_position[0]; try without fixed position
+                        //     set_velocity.twist.linear.y = 0;//fixed_position[1] - robot_position[1];
+                        
+                        //     if(robot_position[2] < 0.5){
+                        //         set_velocity.twist.linear.z = 0.5 - robot_position[2];
+                        //     }
+                        //     else{
+                        //         set_velocity.twist.linear.z =0;
+                        //     }
+
+                        // }
+                        // else{
+                        //     set_velocity.twist.linear.x = 0.3*(fixed_position[0] - robot_position[0]); 
+                        //     set_velocity.twist.linear.y = 0.3*(fixed_position[1] - robot_position[1]);
+                        //     set_velocity.twist.linear.z = 0.3*(fixed_position[2] - robot_position[2]);
+    	                    
+                        //     set_velocity.twist.angular.x = 0;
+    	                   //  set_velocity.twist.angular.y = 0;
+    	                   //  set_velocity.twist.angular.z = omega;
+                        // }
 	                }
 	                else{
 
@@ -511,8 +597,19 @@ void RobotControl::robotPositionCallback(const geometry_msgs::PoseStampedConstPt
 
 	                    if(abs(direction_vector[2] / (abs(direction_vector[0])+abs(direction_vector[1])+abs(direction_vector[2]))) > 0.85){
 	                    	// this means we go straight down or up
-	                    	v = v_max;
-	                    	/*set_pose.pose.orientation.x = robot_orientation[0];
+                            
+                            //NEW:
+                            if(nearest_obstacle_distance > velocity_safety_distance || robot_position[2] < 0.15){
+                                v = v_max;
+                            }
+                            else{
+                                v = v_max * (nearest_obstacle_distance-robot_radius)/(velocity_safety_distance);
+                            }
+
+	                    	//v = v_max; OLD
+	                    	
+
+                            /*set_pose.pose.orientation.x = robot_orientation[0];
 		                    set_pose.pose.orientation.y = robot_orientation[1];
 		                    set_pose.pose.orientation.z = robot_orientation[2];
 		                    set_pose.pose.orientation.w = robot_orientation[3];
@@ -540,12 +637,21 @@ void RobotControl::robotPositionCallback(const geometry_msgs::PoseStampedConstPt
 		      				double roll, pitch, yaw;
 		      				m.getRPY(roll, pitch, yaw);
 		      				*/
-		                    if(nearest_obstacle_distance > safety_distance){
-		                        v = v_max * (half_pi-abs(theta))/half_pi;
-		                    }
-		                    else{
-		                        v = v_max * nearest_obstacle_distance/safety_distance * (half_pi-abs(theta))/half_pi;
-		                    }
+                            //OLD:
+		                    // if(nearest_obstacle_distance > safety_distance){
+		                    //     v = v_max * (half_pi-abs(theta))/half_pi;
+		                    // }
+		                    // else{
+		                    //     v = v_max * nearest_obstacle_distance/safety_distance * (half_pi-abs(theta))/half_pi;
+		                    // }
+
+                            //NEW:
+                            if(nearest_obstacle_distance > velocity_safety_distance){
+                                v = v_max * (half_pi-abs(theta))/half_pi;
+                            }
+                            else{
+                                v = v_max * (nearest_obstacle_distance- robot_radius)/(velocity_safety_distance) * (half_pi-abs(theta))/half_pi;
+                            }
 
 	                        omega = omega_max * theta / half_pi;
 		                    set_velocity.twist.angular.x = 0;
@@ -564,7 +670,7 @@ void RobotControl::robotPositionCallback(const geometry_msgs::PoseStampedConstPt
 	                        // lower speed because getting close to target
 	                         v *= sqrt(distance_from_goal_point_squared)/2+0.05;
 	                    }
-	                    cout << "nearest_obstacle_distance" << nearest_obstacle_distance << endl; 
+	                    //cout << "nearest_obstacle_distance: " << nearest_obstacle_distance << endl; 
 	                    //cout << "u_sol in control: " << u_sol  << endl; //<< "and v is: " << v << endl;
 
 
@@ -590,6 +696,7 @@ void RobotControl::robotPositionCallback(const geometry_msgs::PoseStampedConstPt
 
             }
             else{
+                // Turn toiwards goal
 
             	Vector3d goal_direction = goal_position - robot_position;
             	double yaw_desired =  atan2(goal_direction[1], goal_direction[0]);
@@ -636,9 +743,9 @@ void RobotControl::robotPositionCallback(const geometry_msgs::PoseStampedConstPt
                     
                 }
                 else{ // otherwise keep same position if we have no u_sol ..
-                	set_velocity.twist.linear.x = fixed_position[0] - robot_position[0];
-                	set_velocity.twist.linear.y = fixed_position[1] - robot_position[1];
-                	set_velocity.twist.linear.z = fixed_position[2] - robot_position[2];
+                	set_velocity.twist.linear.x = 0.5*(fixed_position[0] - robot_position[0]);
+                	set_velocity.twist.linear.y = 0.5*(fixed_position[1] - robot_position[1]);
+                	set_velocity.twist.linear.z = 0.5*(fixed_position[2] - robot_position[2]);
 
                     /*set_pose.pose.position.x = fixed_position[0];
                     set_pose.pose.position.y = fixed_position[1];

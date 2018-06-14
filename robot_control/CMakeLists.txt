@@ -17,6 +17,7 @@ find_package(catkin REQUIRED COMPONENTS
   octomap_ros
   tf2
   tf2_ros
+  nav_msgs
 )
 
 find_package(octomap REQUIRED)
@@ -147,11 +148,21 @@ add_executable(goal_direction src/goal_direction.cpp)
 add_executable(goal_direction_debug src/goal_direction_debug.cpp)
 add_executable(motion_computation src/motion_computation.cpp)
 add_executable(robot_control src/robot_control.cpp)
+add_executable(record_data src/record_data.cpp)
 
 target_link_libraries(goal_direction ${catkin_LIBRARIES})
 target_link_libraries(goal_direction_debug ${catkin_LIBRARIES})
 target_link_libraries(motion_computation ${catkin_LIBRARIES})
 target_link_libraries(robot_control ${catkin_LIBRARIES})
+target_link_libraries(record_data ${catkin_LIBRARIES})
+
+add_executable(unknown_motion_computation src/unknown_motion_computation.cpp)
+add_executable(unknown_robot_control src/unknown_robot_control.cpp)
+
+target_link_libraries(unknown_motion_computation ${catkin_LIBRARIES})
+target_link_libraries(unknown_robot_control ${catkin_LIBRARIES})
+
+
 
 link_directories(${OCTOMAP_LIBRARY_DIRS})
 ## Rename C++ executable without prefix

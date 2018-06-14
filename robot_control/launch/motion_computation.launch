@@ -5,5 +5,7 @@
 	<node pkg="robot_control" type="motion_computation" name="motion_computation" output="screen" />
 
 	<node pkg = "robot_control" type="robot_control" name="robot_control" output="screen" />
+	
+	<node pkg="rviz" type="rviz" name="rviz" />
 
 </launch>

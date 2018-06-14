@@ -29,6 +29,8 @@
 #include "geometry_msgs/PoseStamped.h"
 #include "geometry_msgs/TwistStamped.h"
 
+#include <nav_msgs/Odometry.h>
+
 //for eigen vectors:
 #include <Eigen/Dense>
 using namespace Eigen;
@@ -75,6 +77,7 @@ private:
     //ros::Subscriber u_sol_sub_;
     ros::Subscriber goal_position_sub_;
     ros::Subscriber target_position_sub_;
+    ros::Subscriber robot_local_velocity_sub;
     
     //ros::Publisher pub_u_sol_cloud;
     //ros::Subscriber u_targ_sub_
@@ -97,7 +100,7 @@ private:
     geometry_msgs::Vector3 robot_position;
     geometry_msgs::Vector3 direction_vector;*/
 
-    Vector3d direction_vector, robot_position, subgoal_vector, u_sol, fixed_position, target_position, u_sol_global, goal_position;
+    Vector3d direction_vector, robot_position, subgoal_vector, u_sol, fixed_position, target_position, u_sol_global, goal_position, local_robot_translational_velocity;
 
     //float goal_position[3], robot_position[3], direction_vector[3];
 
@@ -106,13 +109,15 @@ private:
 
     double val_to_remember_; // member variables will retain their values even as callbacks come and go
 
+    double start_time;
     double pi, half_pi;
     double sonar_up_vertical_offset;
     double sonar_down_vertical_offset;
     double max_camera_range;
     double robot_radius;
     double robot_diameter;
-    double safety_distance;
+    double velocity_safety_distance, safety_distance;
+
     double max_sonar_range;
     float radius_sq;
     float diameter_sq;
@@ -132,6 +137,8 @@ private:
     int M,N, spherical_matrix_degree_resolution, m, n;
     float nearest_obstacle_distance;
     double sphere_matrix [30][60];
+    //double sphere_matrix [60][120];
+
 
     double v_max, omega_max, v, omega, theta;
 
@@ -158,6 +165,8 @@ private:
     void targetPositionCallback(const geometry_msgs::Vector3ConstPtr& input);
     void goalPositionCallback(const geometry_msgs::Vector3ConstPtr& input);
     float vectorlength(const Vector3d & vec);
+    void robotLocalVelocityCallback(const nav_msgs::OdometryConstPtr& input);
+
     //void utargCallback(const geometry_msgs::Vector3ConstPtr& input);
     //void sonarlimitsrangesCallback(const std_msgs::Int16MultiArray::ConstPtr& input);
     Vector3d cross(const Vector3d & vec1, const Vector3d & vec2);

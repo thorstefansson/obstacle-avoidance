@@ -15,6 +15,13 @@ void poseCallback(const geometry_msgs::PoseStampedConstPtr& msg){
   transform.setRotation(tf::Quaternion(msg->pose.orientation.x, msg->pose.orientation.y, msg->pose.orientation.z, msg->pose.orientation.w));
 
   br.sendTransform(tf::StampedTransform(transform, ros::Time::now(), "world", "base_link"));
+
+  // for visualizing mavros stuff in rviz:
+  // we need to define transform between world and map
+  transform.setOrigin( tf::Vector3(0,0,0) );
+  transform.setRotation(tf::Quaternion(0,0,0,1));
+  br.sendTransform(tf::StampedTransform(transform, ros::Time::now(), "world", "map"));
+
 }
 
 int main(int argc, char** argv){

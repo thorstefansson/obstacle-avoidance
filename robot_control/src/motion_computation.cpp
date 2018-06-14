@@ -21,15 +21,18 @@ MotionComputation::MotionComputation(ros::NodeHandle* nodehandle):nh_(*nodehandl
 
     sonar_up_vertical_offset = 0.13;
     sonar_down_vertical_offset = -0.05;
-    max_camera_range = 10; //it's actually 1.4 m but 10m cameras exist...
-    camera_x_offset = 0.05;
+    //max_camera_range = 10; //it's actually 1.4 m but 10m cameras exist...
+    //camera_x_offset = 0.05;
     // size of simulated uav: 72.6? cm
     //robot_radius = 0.35;//0.4;//0.2;
     //robot_diameter = 0.7;//0.8;
 	robot_radius = 0.4;//0.2;
     robot_diameter = 0.8;
 
-    safety_distance = 0.4;
+    //safety_distance = 0.5;
+    alpha_safety_distance = 0.8;
+    beta_safety_distance = 0.7;
+
     max_sonar_range = 6;
     radius_sq = pow(robot_radius,2);
     diameter_sq = pow(robot_radius*2,2);
@@ -39,7 +42,8 @@ MotionComputation::MotionComputation(ros::NodeHandle* nodehandle):nh_(*nodehandl
     spherical_matrix_width = 360/spherical_matrix_degree_resolution;
 	M = spherical_matrix_height;//180/spherical_matrix_degree_resolution;
     N = spherical_matrix_width;//360/spherical_matrix_degree_resolution;
-    //cout << "M: " << M << "N: " << N << endl;
+    
+    cout << "M: " << M << "N: " << N << endl;
 
 
     subgoal_point = false;
@@ -117,8 +121,7 @@ void MotionComputation::initializePublishers()
     pub_selected_subgoal = nh_.advertise<sensor_msgs::PointCloud2>("selected_subgoal", 1, true);
     pub_u_dom_cloud = nh_.advertise<sensor_msgs::PointCloud2>("/u_dom_cloud",1, true);
     pub_u_sol_cloud = nh_.advertise<sensor_msgs::PointCloud2>("/u_sol_cloud", 1, true);
-
-    
+    pub_points_to_Cspace = nh_.advertise<sensor_msgs::PointCloud2>("points_to_Cspace_cloud", 1, true);
 
     //pub_desired_position_ = nh_.advertise<geometry_msgs::PoseStamped>("/mavros/setpoint_position/local", 1, true);
     //pub_target_vector = nh_.advertise<geometry_msgs::Vector3>("/target_vector",1, true);
@@ -138,8 +141,8 @@ void MotionComputation::initializeUnitaryVectors()
 
 	for(m = 0 ; m<M; m++){
 		for(n=0;n<N; n++){
-			theta = n *  pi / M - pi;
-			phi = m * pi / M - pi/2;
+			phi = (m+0.5) * pi / M - pi/2;
+            theta = (n+0.5) *  pi / M - pi;
 			r = cos(phi);
 			unitary_direction_vectors_matrix[m][n][0] = r * cos(theta);
 			unitary_direction_vectors_matrix[m][n][1] = r * sin(theta);
@@ -374,10 +377,11 @@ void MotionComputation::sphericalMatrixCallback(const std_msgs::Float32MultiArra
 
 	float dstride0 = matrix_msg->layout.dim[0].stride;
 	float dstride1 = matrix_msg->layout.dim[1].stride;
-	/*float h = matrix_msg->layout.dim[0].size;
+	float h = matrix_msg->layout.dim[0].size;
 	float w = matrix_msg->layout.dim[1].size;
-	int M = h;
-	int N = w;*/
+	//cout << "size of matrix coming into spherical matrix callback: " << h << " " << w << endl;
+	// int M = h;
+	// int N = w;
 
 	/*
 		float w = msg->layout.dim[1].size;
@@ -403,13 +407,21 @@ void MotionComputation::sphericalMatrixCallback(const std_msgs::Float32MultiArra
 	}
 
 	
-	/*cout << "sphere matrix: " << endl;// << sphere_matrix << endl;
-	for (m = M-1; m>=0 ; m--){
-		for(n=0;n<N;n++){
-			cout << sphere_matrix[m][n] << " " ;
-		}
-		cout << endl;
-	}*/	
+	// cout << "sphere matrix: " << endl;// << sphere_matrix << endl;
+	// for (m = M-1; m>=0 ; m--){
+	// 	for(n=N-1;n>=0;n--){
+	// 		cout << sphere_matrix[m][n] << " " ;
+	// 	}
+	// 	cout << endl;
+	// }
+
+	// cout << "subgoal matrix: " << endl;// << sphere_matrix << endl;
+	// for (m = M-1; m>=0 ; m--){
+	// 	for(n=N-1;n>=0;n--){
+	// 		cout << subgoal_matrix[m][n] << " " ;
+	// 	}
+	// 	cout << endl;
+	// }
 
 	robot_sphere_matrix_position[0] = sphere_matrix[0][0];
 	robot_sphere_matrix_position[1] = sphere_matrix[0][1];
@@ -425,7 +437,7 @@ void MotionComputation::sphericalMatrixCallback(const std_msgs::Float32MultiArra
 
 	double x, y, z, r, rho, phi, theta;
 
-	PointCloud::Ptr msg (new PointCloud);
+	/*PointCloud::Ptr msg (new PointCloud);
 	msg->header.frame_id = "base_link";
 	msg->height = 1;
 	msg->width = M*N;
@@ -457,7 +469,7 @@ void MotionComputation::sphericalMatrixCallback(const std_msgs::Float32MultiArra
   	sensor_msgs::PointCloud2 output;
   	pcl::toROSMsg(*msg, output);
   	// Publish the data
-  	pub.publish (output);
+  	pub.publish (output);*/
 
 
 
@@ -529,15 +541,15 @@ void MotionComputation::sphericalMatrixCallback(const std_msgs::Float32MultiArra
   			for (n = 0; n < N; n++){
   				// check if sub goal
   				if(subgoal_matrix[m][n] > 0){
-  					phi = m * pi / M - pi/2;
-                    theta = n *  pi / M - pi;
+  					phi = (m+0.5) * pi / M - pi/2;
+                    theta = (n+0.5) *  pi / M - pi;
              
                     rho = subgoal_matrix[m][n];
                     r = rho * cos(phi);
                     //x = r * cos(theta);
                     //y = r * sin(theta);
                     z = rho * sin(phi);
-                    if(abs(z - relative_height) < closest_subgoal_distance && z < range_up +sonar_up_vertical_offset - robot_radius){
+                    if(abs(z - relative_height) < closest_subgoal_distance && z < range_up + sonar_up_vertical_offset - robot_radius){
                     	subgoal_matrix[M-1][0] = z;
                     	closest_subgoal_distance = abs(z - relative_height);	
                     }
@@ -550,8 +562,8 @@ void MotionComputation::sphericalMatrixCallback(const std_msgs::Float32MultiArra
   			for (n = 0; n < N; n++){
   				// check if sub goal
   				if(subgoal_matrix[m][n] > 0){
-  					phi = m * pi / M - pi/2;
-                    theta = n *  pi / M - pi;
+  					phi = (m+0.5) * pi / M - pi/2;
+                    theta = (n+0.5) *  pi / M - pi;
              
                     rho = subgoal_matrix[m][n];
                     r = rho * cos(phi);
@@ -568,7 +580,7 @@ void MotionComputation::sphericalMatrixCallback(const std_msgs::Float32MultiArra
   			}
   		}
 
-  		cout << "m_min: " << m_min << " m_max: " << m_max << " M: " << M; 
+  		//cout << "m_min: " << m_min << " m_max: " << m_max << " M: " << M; 
 
 
 
@@ -857,8 +869,8 @@ void MotionComputation::sphericalMatrixCallback(const std_msgs::Float32MultiArra
 			{
 				//r = rho * sin(phi);
 				rho = subgoal_matrix[m][n];
-				theta = n *  pi / M - pi;
-				phi = m * pi / M - pi/2;
+				phi = (m+0.5) * pi / M - pi/2;
+                theta = (n+0.5) *  pi / M - pi;
 
 				r = rho * cos(phi);				
 				x = r * cos(theta);
@@ -936,6 +948,7 @@ void MotionComputation::goalPositionCallback(const geometry_msgs::Vector3ConstPt
 	//cout<<"here 1"<< endl;
 
 	direction_vector = goal_position - robot_sphere_matrix_position;//robot_position;
+	//cout << "direction vector: " << direction_vector << endl;
     goal_point = true;
     bool nothing_reachable = false;
 
@@ -956,7 +969,7 @@ void MotionComputation::goalPositionCallback(const geometry_msgs::Vector3ConstPt
     //cout<<"what's happening"<< endl;
     //if the goal is not directly above or below the robot:
 	target_calculated = false;
-    if(abs(direction_vector[2])/ xy_length_of_direction_vector < 2.8){
+    if(abs(direction_vector[2])/ xy_length_of_direction_vector < 2.8){ // This if sentence seems to be unnecessary since we are not turning the robot anymore in this program
 
         //turn robot in xy plane in direction of goal
 
@@ -1099,8 +1112,8 @@ void MotionComputation::goalPositionCallback(const geometry_msgs::Vector3ConstPt
                         // Also, currently we are putting direction of goal in global frame into isreachable function
                         // but the direction of sub goals in the robot frame into that function.... !!! this we need to fix
                         rho = subgoal_matrix[m][n];
-                        theta = n *  pi / M - pi;
-                        phi = m * pi / M - pi/2;
+                        phi = (m+0.5) * pi / M - pi/2;
+                    	theta = (n+0.5) *  pi / M - pi;
 
                         r = rho * cos(phi);
                         x1 = r * cos(theta);
@@ -1305,9 +1318,6 @@ void MotionComputation::goalPositionCallback(const geometry_msgs::Vector3ConstPt
             robot_orientation_v [2] = robot_sphere_matrix_orientation[2];
             robot_orientation_w = robot_sphere_matrix_orientation[3];
 
-
-
-          //cout << "done sorting sub goals by distance to goal, 715. " ;   // anyways
             countx = 0;
             for (m = 0; m < spherical_matrix_height; m++){
                 for (n = 0; n < spherical_matrix_width; n++){
@@ -1325,8 +1335,8 @@ void MotionComputation::goalPositionCallback(const geometry_msgs::Vector3ConstPt
                         // Also, currently we are putting direction of goal in global frame into isreachable function
                         // but the direction of sub goals in the robot frame into that function.... !!! this we need to fix
                         rho = subgoal_matrix[m][n];
-                        theta = n *  pi / M - pi;
-                        phi = m * pi / M - pi/2;
+                        phi = (m+0.5) * pi / M - pi/2;
+                    	theta = (n+0.5) *  pi / M - pi;
 
                         r = rho * cos(phi);
                         x1 = r * cos(theta);
@@ -1566,7 +1576,7 @@ void MotionComputation::goalPositionCallback(const geometry_msgs::Vector3ConstPt
 					//if(sphere_matrix[m][n] > 0){
 					conda = (n >= N/2);
 					
-					theta = n *  pi / M - pi;
+					theta = (n+0.5) *  pi / M - pi;
 
 					// og thessu
 					if(theta_u_targ > 0){
@@ -1628,7 +1638,8 @@ void MotionComputation::goalPositionCallback(const geometry_msgs::Vector3ConstPt
 			//Vector3d n_D;
 			float gamma, gamma_i, obst_dist;//, alpha;
 			int m_gamma;
-			float matrix_half_radian_resolution = spherical_matrix_degree_resolution * pi / 360;
+			//float matrix_half_radian_resolution = spherical_matrix_degree_resolution * pi / 360;
+			double matrix_radian_resolution = spherical_matrix_degree_resolution * pi / 180;
 			vector< vector<double> > n_D_vectors_TR,n_D_vectors_TL, n_D_vectors_DR, n_D_vectors_DL;
 			vector< vector<double> > bad_directions_TR,bad_directions_TL, bad_directions_DR, bad_directions_DL;
 
@@ -1651,8 +1662,8 @@ void MotionComputation::goalPositionCallback(const geometry_msgs::Vector3ConstPt
 					// this is to make sure the robot doesn't count a wall behind the target as an obstacle
 					if (sphere_matrix[m][n] != 0  && sphere_matrix[m][n] < target_distance + robot_radius){ // maybe should use robot_diameter instead of robot_radius here
 						//find u_obst, unitary vector in obstacle direction ...
-						phi = m * pi / M - pi/2;
-						theta = n *  pi / M - pi;
+						phi = (m+0.5) * pi / M - pi/2;
+                    	theta = (n+0.5) *  pi / M - pi;
 		                r =cos(phi);
 		                u_obst[0] = r * cos(theta);
 		                u_obst[1] = r * sin(theta);
@@ -1664,10 +1675,10 @@ void MotionComputation::goalPositionCallback(const geometry_msgs::Vector3ConstPt
 						row1.push_back(n_D[1]);
 						row1.push_back(n_D[2]);
 						
-						gamma = abs(atan((robot_radius + safety_distance)/sphere_matrix[m][n]));
+						gamma = abs(atan((robot_radius + alpha_safety_distance)/sphere_matrix[m][n]));
 						
-						if(sphere_matrix[m][n] < safety_distance + robot_radius){
-							gamma += (pi - gamma)*(1 - (sphere_matrix[m][n]-robot_radius)/safety_distance);
+						if(sphere_matrix[m][n] < beta_safety_distance + robot_radius){
+							gamma += (pi - gamma)*(1 - (sphere_matrix[m][n]-robot_radius)/beta_safety_distance);
 							// add angle to some collective bad direction for each quarter.......
 							bad_angle = true;
 							//cout << "bad angle at m: " << m << "and n: " << n << endl;
@@ -1684,8 +1695,8 @@ void MotionComputation::goalPositionCallback(const geometry_msgs::Vector3ConstPt
 								//hmm think about the max angle... 
 								// gamma is the angle so 
 								m_gamma = ceil(gamma * M / pi);
-								m_min = m - m_gamma;
-								m_max = m + m_gamma;
+								m_min = m - m_gamma -1;
+								m_max = m + m_gamma +1;
 								if(m_min < 0 || m_max > M ){
 									m_max = M;
 									m_min = 0;
@@ -1699,14 +1710,23 @@ void MotionComputation::goalPositionCallback(const geometry_msgs::Vector3ConstPt
 										u[1] = unitary_direction_vectors_matrix[m1][n1][1];
 										u[2] = unitary_direction_vectors_matrix[m1][n1][2];
 										gamma_i = abs(acos(dot(u,u_obst)));
-										if(abs(gamma_i - gamma) < matrix_half_radian_resolution){
-											//this means we're on the boundary of S_2
-											S_DL_bound[m1][n1] = true;
-										}
-										else if(gamma_i < gamma){
+										// To locate a little from boundary:
+										if(gamma_i<gamma){
 											// this means we are within S_2
 											S_nD_DL[m1][n1]=true;
 										}
+										else if(abs(gamma_i - gamma) <matrix_radian_resolution){
+											//this means we're on the boundary of S_2, but not within limits.. 
+											S_DL_bound[m1][n1] = true;
+										}
+										// if(abs(gamma_i - gamma) < matrix_half_radian_resolution){
+										// 	//this means we're on the boundary of S_2
+										// 	S_DL_bound[m1][n1] = true;
+										// }
+										// else if(gamma_i < gamma){
+										// 	// this means we are within S_2
+										// 	S_nD_DL[m1][n1]=true;
+										// }
 									}
 								}
 								if(bad_angle){
@@ -1718,8 +1738,12 @@ void MotionComputation::goalPositionCallback(const geometry_msgs::Vector3ConstPt
 								// in TL
 								n_D_vectors_TL.push_back(row1);
 								m_gamma = ceil(gamma * M / pi);
-								m_min = m - m_gamma;
-								m_max = m + m_gamma;
+								// For exactly on boundary:
+								// m_min = m - m_gamma;
+								// m_max = m + m_gamma;
+								// a little from boundary :  ?
+								m_min = m - m_gamma -1;
+								m_max = m + m_gamma +1;
 								if(m_min < 0 || m_max > M ){
 									m_max = M;
 									m_min = 0;
@@ -1730,14 +1754,26 @@ void MotionComputation::goalPositionCallback(const geometry_msgs::Vector3ConstPt
 										u[1] = unitary_direction_vectors_matrix[m1][n1][1];
 										u[2] = unitary_direction_vectors_matrix[m1][n1][2];
 										gamma_i = abs(acos(dot(u,u_obst)));
-										if(abs(gamma_i - gamma) < spherical_matrix_degree_resolution * pi / 360){
-											//this means we're on the boundary of S_2
-											S_TL_bound[m1][n1] = true;
-										}
-										else if(gamma_i < gamma){
+										
+										// To locate a little from boundary:
+										if(gamma_i<gamma){
 											// this means we are within S_2
 											S_nD_TL[m1][n1]=true;
 										}
+										else if(abs(gamma_i - gamma) <matrix_radian_resolution){
+											//this means we're on the boundary of S_2, but not within limits.. 
+											S_TL_bound[m1][n1] = true;
+										}
+
+										// To locate "exactly" on boundary:
+										// if(abs(gamma_i - gamma) < spherical_matrix_degree_resolution * pi / 360){ //try changing this.. 
+										// 	//this means we're on the boundary of S_2
+										// 	S_TL_bound[m1][n1] = true;
+										// }
+										// else if(gamma_i < gamma){
+										// 	// this means we are within S_2
+										// 	S_nD_TL[m1][n1]=true;
+										// }
 									}
 								}
 								if(bad_angle){
@@ -1753,8 +1789,8 @@ void MotionComputation::goalPositionCallback(const geometry_msgs::Vector3ConstPt
 								// in TR
 								n_D_vectors_TR.push_back(row1);
 								m_gamma = ceil(gamma * M / pi);
-								m_min = m - m_gamma;
-								m_max = m + m_gamma;
+								m_min = m - m_gamma-1;
+								m_max = m + m_gamma+1;
 								if(m_min < 0 || m_max > M ){
 									m_max = M;
 									m_min = 0;
@@ -1765,14 +1801,24 @@ void MotionComputation::goalPositionCallback(const geometry_msgs::Vector3ConstPt
 										u[1] = unitary_direction_vectors_matrix[m1][n1][1];
 										u[2] = unitary_direction_vectors_matrix[m1][n1][2];
 										gamma_i = abs(acos(dot(u,u_obst)));
-										if(abs(gamma_i - gamma) < spherical_matrix_degree_resolution * pi / 360){
-											//this means we're on the boundary of S_2
-											S_TR_bound[m1][n1] = true;
-										}
-										else if(gamma_i < gamma){
+										// To locate a little from boundary:
+										if(gamma_i<gamma){
 											// this means we are within S_2
 											S_nD_TR[m1][n1]=true;
 										}
+										else if(abs(gamma_i - gamma) <matrix_radian_resolution){
+											//this means we're on the boundary of S_2, but not within limits.. 
+											S_TR_bound[m1][n1] = true;
+										}
+
+										// if(abs(gamma_i - gamma) < spherical_matrix_degree_resolution * pi / 360){
+										// 	//this means we're on the boundary of S_2
+										// 	S_TR_bound[m1][n1] = true;
+										// }
+										// else if(gamma_i < gamma){
+										// 	// this means we are within S_2
+										// 	S_nD_TR[m1][n1]=true;
+										// }
 									}
 								}
 								if(bad_angle){
@@ -1785,8 +1831,8 @@ void MotionComputation::goalPositionCallback(const geometry_msgs::Vector3ConstPt
 								// in DR
 								n_D_vectors_DR.push_back(row1);
 								m_gamma = ceil(gamma * M / pi);
-								m_min = m - m_gamma;
-								m_max = m + m_gamma;
+								m_min = m - m_gamma-1;
+								m_max = m + m_gamma+1;
 								if(m_min < 0 || m_max > M ){
 									m_max = M;
 									m_min = 0;
@@ -1797,14 +1843,23 @@ void MotionComputation::goalPositionCallback(const geometry_msgs::Vector3ConstPt
 										u[1] = unitary_direction_vectors_matrix[m1][n1][1];
 										u[2] = unitary_direction_vectors_matrix[m1][n1][2];
 										gamma_i = abs(acos(dot(u,u_obst)));
-										if(abs(gamma_i - gamma) < spherical_matrix_degree_resolution * pi / 360){
-											//this means we're on the boundary of S_2
-											S_DR_bound[m1][n1] = true;
-										}
-										else if(gamma_i < gamma){
+										// To locate a little from boundary:
+										if(gamma_i<gamma){
 											// this means we are within S_2
 											S_nD_DR[m1][n1]=true;
 										}
+										else if(abs(gamma_i - gamma) <matrix_radian_resolution){
+											//this means we're on the boundary of S_2, but not within limits.. 
+											S_DR_bound[m1][n1] = true;
+										}
+										// if(abs(gamma_i - gamma) < spherical_matrix_degree_resolution * pi / 360){
+										// 	//this means we're on the boundary of S_2
+										// 	S_DR_bound[m1][n1] = true;
+										// }
+										// else if(gamma_i < gamma){
+										// 	// this means we are within S_2
+										// 	S_nD_DR[m1][n1]=true;
+										// }
 									}
 								}
 								if(bad_angle){
@@ -1825,14 +1880,6 @@ void MotionComputation::goalPositionCallback(const geometry_msgs::Vector3ConstPt
 				cout<< endl;
 			}
 */
-			/*cout << "S_nD_DL without S1: " << endl;
-			for(m=M-1;m>=0;m--){
-				for(n=N-1;n>=0;n--){
-				cout << S_nD_DL[m][n] << " ";
-				}
-				cout<< endl;
-			}*/
-	//}
 
 			/*cout << "S_DL bound before deleting certain points: " << endl;
 			for(m=M-1;m>=0;m--){
@@ -1840,7 +1887,20 @@ void MotionComputation::goalPositionCallback(const geometry_msgs::Vector3ConstPt
 				cout << S_DL_bound[m][n] << " ";
 				}
 				cout<< endl;
+			}
+
+
+			cout << "S_nD_DL without S1: " << endl;
+			for(m=M-1;m>=0;m--){
+				for(n=N-1;n>=0;n--){
+				cout << S_nD_DL[m][n] << " ";
+				}
+				cout<< endl;
 			}*/
+
+	//}
+
+			
 			// ------------------------------------Now construct S_1-----------------------------------------
 
 			// We have the n_D vectors for each quadrant
@@ -1945,8 +2005,8 @@ void MotionComputation::goalPositionCallback(const geometry_msgs::Vector3ConstPt
 
 
 		  	//Remove boundary points that are not in field of view of camera.. 
-		  	int m_camera_min = M * 20/60; // 28
-		  	int m_camera_max = M * 40/60;
+		  	int m_camera_min = 0;//M * 20/60; // 28
+		  	int m_camera_max = M;// * 40/60;
 
 			for(m = 0; m < M ; m ++){
 				for (n = 0; n < N; n++){
@@ -2026,7 +2086,7 @@ void MotionComputation::goalPositionCallback(const geometry_msgs::Vector3ConstPt
 			cout << "S_nD_DL: " << endl;
 			for(m=M-1;m>=0;m--){
 				for(n=N-1;n>=0;n--){
-			google calendar	cout << S_nD_DL[m][n] << " ";
+					cout << S_nD_DL[m][n] << " ";
 				}
 				cout<< endl;
 			}*/
@@ -2034,15 +2094,15 @@ void MotionComputation::goalPositionCallback(const geometry_msgs::Vector3ConstPt
 			/*cout << "S_nD_DL: " << endl;
 			for(m=M-1;m>=0;m--){
 				for(n=N-1;n>=0;n--){
-				cout << S_nD_DL[m][n] << " ";
+					cout << S_nD_DL[m][n] << " ";
 				}
 				cout<< endl;
-			}*/
+			}
 
-			/*cout << "S_DL bound after: " << endl;
+			cout << "S_DL bound: " << endl;
 			for(m=M-1;m>=0;m--){
 				for(n=N-1;n>=0;n--){
-				cout << S_DL_bound[m][n] << " ";
+					cout << S_DL_bound[m][n] << " ";
 				}
 				cout<< endl;
 			}*/
@@ -2130,6 +2190,28 @@ void MotionComputation::goalPositionCallback(const geometry_msgs::Vector3ConstPt
 					}
 					else{
 						cout << "bound directions for TL < 2" << endl;
+						// in this case calculate u_TL_dom from the bad directions... 
+						sumx=0, sumy=0, sumz=0;
+						if(bad_directions_TL.size() > 0){
+							for (int i = 0 ; i < bad_directions_TL.size(); i++){
+								//sum_vector += bad_directions_TL[i];
+								sumx +=bad_directions_TL[i][0];
+								sumy +=bad_directions_TL[i][1];
+								sumz +=bad_directions_TL[i][2];
+							}
+							//sum_vector /= bad_directions_TL.size();
+							sumx /=bad_directions_TL.size();
+							sumy /=bad_directions_TL.size();
+							sumz /=bad_directions_TL.size();
+							
+							u_TL_dom[0] = -sumx;
+							u_TL_dom[1] = -sumy;
+							u_TL_dom[2] = -sumz;
+							use_u_TL_dom = true;
+							u_targ_S_nD_count++;
+
+							//cout  << "u_TL_dom: " << u_TL_dom << endl;
+						}
 					}
 				}
 				if(S_nD_TR[m_targ][n_targ]){
@@ -2159,6 +2241,26 @@ void MotionComputation::goalPositionCallback(const geometry_msgs::Vector3ConstPt
 					}
 					else{
 						cout << "bound directions for TR < 2" << endl;
+						// in this case calculate u_TR_dom from the bad directions... 
+						sumx=0, sumy=0, sumz=0;
+						if(bad_directions_TR.size() > 0){
+							for (int i = 0 ; i < bad_directions_TR.size(); i++){
+								//sum_vector += bad_directions_TL[i];
+								sumx +=bad_directions_TR[i][0];
+								sumy +=bad_directions_TR[i][1];
+								sumz +=bad_directions_TR[i][2];
+							}
+							//sum_vector /= bad_directions_TL.size();
+							sumx /=bad_directions_TR.size();
+							sumy /=bad_directions_TR.size();
+							sumz /=bad_directions_TR.size();
+							
+							u_TR_dom[0] = -sumx;
+							u_TR_dom[1] = -sumy;
+							u_TR_dom[2] = -sumz;
+							use_u_TR_dom = true;
+							u_targ_S_nD_count++;
+						}
 					}					
 				}
 				if(S_nD_DL[m_targ][n_targ]){
@@ -2188,6 +2290,27 @@ void MotionComputation::goalPositionCallback(const geometry_msgs::Vector3ConstPt
 					}
 					else{
 						cout << "bound directions for DL < 2" << endl;
+						// in this case calculate u_DL_dom from the bad directions... 
+						sumx=0, sumy=0, sumz=0;
+						if(bad_directions_DL.size() > 0){
+							for (int i = 0 ; i < bad_directions_DL.size(); i++){
+								//sum_vector += bad_directions_TL[i];
+								sumx +=bad_directions_DL[i][0];
+								sumy +=bad_directions_DL[i][1];
+								sumz +=bad_directions_DL[i][2];
+							}
+							//sum_vector /= bad_directions_TL.size();
+							sumx /= bad_directions_DL.size();
+							sumy /= bad_directions_DL.size();
+							sumz /= bad_directions_DL.size();
+							
+							u_DL_dom[0] = -sumx;
+							u_DL_dom[1] = -sumy;
+							u_DL_dom[2] = -sumz;
+							use_u_DL_dom = true;
+							u_targ_S_nD_count++;
+							//cout  << "u_DR_dom: " << u_DR_dom << endl;
+						}
 					}					
 				}
 				if(S_nD_DR[m_targ][n_targ]){
@@ -2217,6 +2340,27 @@ void MotionComputation::goalPositionCallback(const geometry_msgs::Vector3ConstPt
 					}
 					else{
 						cout << "bound directions for DR < 2" << endl;
+						// in this case calculate u_DR_dom from the bad directions... 
+						sumx=0, sumy=0, sumz=0;
+						if(bad_directions_DR.size() > 0){
+							for (int i = 0 ; i < bad_directions_DR.size(); i++){
+								//sum_vector += bad_directions_TL[i];
+								sumx +=bad_directions_DR[i][0];
+								sumy +=bad_directions_DR[i][1];
+								sumz +=bad_directions_DR[i][2];
+							}
+							//sum_vector /= bad_directions_TL.size();
+							sumx /=bad_directions_DR.size();
+							sumy /=bad_directions_DR.size();
+							sumz /=bad_directions_DR.size();
+							
+							u_DR_dom[0] = -sumx;
+							u_DR_dom[1] = -sumy;
+							u_DR_dom[2] = -sumz;
+							use_u_DR_dom = true;
+							u_targ_S_nD_count++;
+							//cout  << "u_DR_dom: " << u_DR_dom << endl;
+						}
 					}					
 				}
 			//}
@@ -2572,8 +2716,8 @@ void MotionComputation::goalPositionCallback(const geometry_msgs::Vector3ConstPt
 				msg->points.push_back(pcl::PointXYZ(u_DL_dom[0],u_DL_dom[1],u_DL_dom[2]));
 
 				// target direction belongs to all four sets of motion constraints..
-				cout << "target direction belongs to all 4 sets of motion constraints" << endl;
-				/*Vector3d u_TR_DL_dom, u_TL_DR_dom, n_E, n_F;
+				/*cout << "target direction belongs to all 4 sets of motion constraints" << endl;
+				/Vector3d u_TR_DL_dom, u_TL_DR_dom, n_E, n_F;
 				
 				u_TL_DR_dom = (u_DR_dom + u_TL_dom) / 2;
 				u_TR_DL_dom = (u_TR_dom + u_DL_dom) / 2;
@@ -2720,13 +2864,48 @@ float MotionComputation::CylTest_CapsFirst(const Vector3d & dir_vec, float lengt
 	// Dot the d and pd vectors to see if point lies behind the 
 	// cylinder cap at pt1.x, pt1.y, pt1.z
 
-	dot = pdx * dx + pdy * dy + pdz * dz;
+	// dot = pdx * dx + pdy * dy + pdz * dz;
 
-	// If dot is less than zero the point is behind the pt1 cap.
-	// If greater than the cylinder axis line segment length squared
-	// then the point is outside the other end cap at pt2.
+	// // If dot is less than zero the point is behind the pt1 cap.
+	// // If greater than the cylinder axis line segment length squared
+	// // then the point is outside the other end cap at pt2.
 
-	if( dot < 0.0f || dot > lengthsq )
+	// if( dot < 0.0f || dot > lengthsq )
+	// {
+	// 	return( -1.0f );
+	// }
+	// else 
+	// {
+	// 	// Point lies within the parallel caps, so find
+	// 	// distance squared from point to line, using the fact that sin^2 + cos^2 = 1
+	// 	// the dot = cos() * |d||pd|, and cross*cross = sin^2 * |d|^2 * |pd|^2
+	// 	// Carefull: '*' means mult for scalars and dotproduct for vectors
+	// 	// In short, where dist is pt distance to cyl axis: 
+	// 	// dist = sin( pd to d ) * |pd|
+	// 	// distsq = dsq = (1 - cos^2( pd to d)) * |pd|^2
+	// 	// dsq = ( 1 - (pd * d)^2 / (|pd|^2 * |d|^2) ) * |pd|^2
+	// 	// dsq = pd * pd - dot * dot / lengthsq
+	// 	//  where lengthsq is d*d or |d|^2 that is passed into this function 
+
+	// 	// distance squared to the cylinder axis:
+
+	// 	dsq = (pdx*pdx + pdy*pdy + pdz*pdz) - dot*dot/lengthsq;
+
+	// 	if( dsq > radius_sq )
+	// 	{
+	// 		return( -1.0f );
+	// 	}
+	// 	else
+	// 	{
+	// 		//cout << "obstacle point" <<  endl;
+	// 		return( dsq );		// return distance squared to axis
+	// 	}
+	// }
+
+
+	//TRY A NEW APPROACH:
+	double k =  (pdx * dx + pdy * dy + pdz * dz)/lengthsq;
+	if( k < 0.0f || k > 1 )
 	{
 		return( -1.0f );
 	}
@@ -2745,7 +2924,9 @@ float MotionComputation::CylTest_CapsFirst(const Vector3d & dir_vec, float lengt
 
 		// distance squared to the cylinder axis:
 
-		dsq = (pdx*pdx + pdy*pdy + pdz*pdz) - dot*dot/lengthsq;
+		//dsq = (pdx*pdx + pdy*pdy + pdz*pdz) - dot*dot/lengthsq;
+
+		dsq = pow(pdx-dx*k,2) + pow(pdy-dy*k,2) + pow(pdz-dz*k,2);
 
 		if( dsq > radius_sq )
 		{
@@ -2913,20 +3094,33 @@ bool MotionComputation::isReachable(const Vector3d & direction){
 	}
 
 	
+	// cout << "robot position: " << robot_position << endl;
+	// cout << "robot sphere matrix position: " << robot_sphere_matrix_position << endl;
 	point3d min_point;
 	min_point.x() = min(robot_bbx_corner [0], goal_bbx_corner [0]); min_point.y() = min(robot_bbx_corner [1], goal_bbx_corner [1]); 
 	min_point.z() = min(robot_bbx_corner [2], goal_bbx_corner [2]);
-    //cout << "min: " << min_point << endl;
+    // cout << "min: " << min_point << endl;
     point3d max_point; 
     max_point.x() = max(robot_bbx_corner [0], goal_bbx_corner [0]); max_point.y() = max(robot_bbx_corner [1], goal_bbx_corner [1]);
     max_point.z() =max(robot_bbx_corner [2], goal_bbx_corner [2]);
-    //cout << "max: " << max_point << endl;
+    // cout << "max: " << max_point << endl;
 
+
+    PointCloud::Ptr msg1 (new PointCloud);
+    msg1->header.frame_id = "/world";
+    msg1->height = 1;
+
+	// cout << "cylinder length checked: " << sqrt(length_of_direction_vector_robot_width_sq) << endl; 
+
+    // double sin_spherical_matrix_degree_resolution = sin(spherical_matrix_degree_resolution), obstacle_point_distance;
+    // int half_height_of_box, half_width_of_box, max_y, min_y, max_z, min_z;
+    int count_nodes_within = 0;
     // Consider revising for different box sizes: 
     for(OcTree::leaf_bbx_iterator it = tree->begin_leafs_bbx(min_point,max_point),end=tree->end_leafs_bbx(); it!= end; ++it)
     {
     	if(it->getValue() > 0 ){
-            // Node is occupied 
+            // Node is occupied
+            count_nodes_within++; 
     		// check if within diameter distance..
     		//x=it.getX() - robot_position[0]; y=it.getY() - robot_position[1]; z=it.getZ() - robot_position[2];
     		x=it.getX() - robot_sphere_matrix_position[0]; y=it.getY() - robot_sphere_matrix_position[1]; z=it.getZ() - robot_sphere_matrix_position[2];
@@ -2936,6 +3130,10 @@ bool MotionComputation::isReachable(const Vector3d & direction){
 
     		if(iswithin>0){
 				count_points_within++;
+
+				// Try to publish points within to a cloud so we can see what is happening...
+
+				msg1->points.push_back (pcl::PointXYZ(it.getX(), it.getY(), it.getZ()));
 
 				//vector <double> newColumn;
 				//newColumn.push_back(x);
@@ -2974,56 +3172,57 @@ bool MotionComputation::isReachable(const Vector3d & direction){
 
 				//addObstacleSphere(obstacle_point_center_x, obstacle_point_center_y, obstacle_point_center_z, cspace_length);
 
+
 				//profum thennan stutta koda i stadinn til ad athuga hvort hann virki:
-				for(county = 0; county< cspace_half_width ; county ++){
-                    for(countz = 0; countz< cspace_half_width ; countz ++){
-						for(countx = 0; countx< cspace_half_width ; countx ++){
-							if(sphere_model[countx][county][countz] == 1){
+				// for(county = 0; county< cspace_half_width ; county ++){
+    //                 for(countz = 0; countz< cspace_half_width ; countz ++){
+				// 		for(countx = 0; countx< cspace_half_width ; countx ++){
+				// 			if(sphere_model[countx][county][countz] == 1){
 
-								if(obstacle_point_center_x+countx<cspace_length && obstacle_point_center_x+countx > 0){
-									if(obstacle_point_center_y+county<cspace_width && obstacle_point_center_y+county >=0){
-										if(obstacle_point_center_z+countz<cspace_width && obstacle_point_center_z+countz >=0){
-											Cspace[obstacle_point_center_x+countx][obstacle_point_center_y+county][obstacle_point_center_z+countz] =1;
-										}
-										if(obstacle_point_center_z-countz >=0 && obstacle_point_center_z-countz<cspace_width){
-											Cspace[obstacle_point_center_x+countx][obstacle_point_center_y+county][obstacle_point_center_z-countz] =1;
-										}
-									}
-									if(obstacle_point_center_y-county >=0 && obstacle_point_center_y-county<cspace_width){
-										if(obstacle_point_center_z+countz<cspace_width && obstacle_point_center_z+countz >=0){
-											Cspace[obstacle_point_center_x+countx][obstacle_point_center_y-county][obstacle_point_center_z+countz] =1;
-										}
-										if(obstacle_point_center_z-countz >=0 && obstacle_point_center_z-countz<cspace_width){
-											Cspace[obstacle_point_center_x+countx][obstacle_point_center_y-county][obstacle_point_center_z-countz] =1;
-										}
-									}
+				// 				if(obstacle_point_center_x+countx<cspace_length && obstacle_point_center_x+countx > 0){
+				// 					if(obstacle_point_center_y+county<cspace_width && obstacle_point_center_y+county >=0){
+				// 						if(obstacle_point_center_z+countz<cspace_width && obstacle_point_center_z+countz >=0){
+				// 							Cspace[obstacle_point_center_x+countx][obstacle_point_center_y+county][obstacle_point_center_z+countz] =1;
+				// 						}
+				// 						if(obstacle_point_center_z-countz >=0 && obstacle_point_center_z-countz<cspace_width){
+				// 							Cspace[obstacle_point_center_x+countx][obstacle_point_center_y+county][obstacle_point_center_z-countz] =1;
+				// 						}
+				// 					}
+				// 					if(obstacle_point_center_y-county >=0 && obstacle_point_center_y-county<cspace_width){
+				// 						if(obstacle_point_center_z+countz<cspace_width && obstacle_point_center_z+countz >=0){
+				// 							Cspace[obstacle_point_center_x+countx][obstacle_point_center_y-county][obstacle_point_center_z+countz] =1;
+				// 						}
+				// 						if(obstacle_point_center_z-countz >=0 && obstacle_point_center_z-countz<cspace_width){
+				// 							Cspace[obstacle_point_center_x+countx][obstacle_point_center_y-county][obstacle_point_center_z-countz] =1;
+				// 						}
+				// 					}
 
-								}
-								if(obstacle_point_center_x- countx>0 && obstacle_point_center_x-countx<cspace_length){
-									if(obstacle_point_center_y+county<cspace_width && obstacle_point_center_y+county >=0){
-										if(obstacle_point_center_z+countz<cspace_width && obstacle_point_center_z+countz >=0){
-											Cspace[obstacle_point_center_x-countx][obstacle_point_center_y+county][obstacle_point_center_z+countz] =1;
-										}
-										if(obstacle_point_center_z-countz >=0 && obstacle_point_center_z-countz<cspace_width){
-											Cspace[obstacle_point_center_x-countx][obstacle_point_center_y+county][obstacle_point_center_z-countz] =1;
-										}
-									}
-									if(obstacle_point_center_y-county >=0 && obstacle_point_center_y-county<cspace_width){
-										if(obstacle_point_center_z+countz<cspace_width && obstacle_point_center_z+countz >=0){
-											Cspace[obstacle_point_center_x-countx][obstacle_point_center_y-county][obstacle_point_center_z+countz] =1;
-										}
-										if(obstacle_point_center_z-countz >=0 && obstacle_point_center_z-countz<cspace_width){
-											Cspace[obstacle_point_center_x-countx][obstacle_point_center_y-county][obstacle_point_center_z-countz] =1;
-										}
-									}
-								}
-							}
-						}
-					}
-				}
-
+				// 				}
+				// 				if(obstacle_point_center_x- countx>0 && obstacle_point_center_x-countx<cspace_length){
+				// 					if(obstacle_point_center_y+county<cspace_width && obstacle_point_center_y+county >=0){
+				// 						if(obstacle_point_center_z+countz<cspace_width && obstacle_point_center_z+countz >=0){
+				// 							Cspace[obstacle_point_center_x-countx][obstacle_point_center_y+county][obstacle_point_center_z+countz] =1;
+				// 						}
+				// 						if(obstacle_point_center_z-countz >=0 && obstacle_point_center_z-countz<cspace_width){
+				// 							Cspace[obstacle_point_center_x-countx][obstacle_point_center_y+county][obstacle_point_center_z-countz] =1;
+				// 						}
+				// 					}
+				// 					if(obstacle_point_center_y-county >=0 && obstacle_point_center_y-county<cspace_width){
+				// 						if(obstacle_point_center_z+countz<cspace_width && obstacle_point_center_z+countz >=0){
+				// 							Cspace[obstacle_point_center_x-countx][obstacle_point_center_y-county][obstacle_point_center_z+countz] =1;
+				// 						}
+				// 						if(obstacle_point_center_z-countz >=0 && obstacle_point_center_z-countz<cspace_width){
+				// 							Cspace[obstacle_point_center_x-countx][obstacle_point_center_y-county][obstacle_point_center_z-countz] =1;
+				// 						}
+				// 					}
+				// 				}
+				// 			}
+				// 		}
+				// 	}
+				// }
 				//cout << "x: " << obstacle_point_center_x << "y: " << obstacle_point_center_y << "z: " << obstacle_point_center_z << endl;
-				/*
+			
+
 				if (obstacle_point_center_x + cspace_half_width < cspace_length && obstacle_point_center_x - cspace_half_width > 0 ){
                     if(obstacle_point_center_y < 0){
 						// This means the center is to the left of the matrix
@@ -3863,15 +4062,23 @@ bool MotionComputation::isReachable(const Vector3d & direction){
     }
 
 
+    msg1->width = count_points_within;
+    // Convert to ROS data type
+  	sensor_msgs::PointCloud2 output1;
+  	pcl::toROSMsg(*msg1, output1);
+  	// Publish the data
+  	pub_points_to_Cspace.publish (output1);
 
-	//cout << "count_points_within : " << count_points_within << endl;
+
+
+	//cout <<"count nodes within: " << count_nodes_within <<  " count_points_within : " << count_points_within << endl;
 
 		//-------------------Transform again to point cloud for visualizing in rviz:------------------------
         // /*
 	PointCloud::Ptr msg (new PointCloud);
 	msg->header.frame_id = "base_link";
 	msg->height = 1;
-	msg->width = cspace_length*Cspaceframe_activepoints;//cspace_width*cspace_width;
+	//msg->width = cspace_length*cspace_width*cspace_width; //*Cspaceframe_activepoints;
 
 
 	/*cout<< "msg width: " << msg->width <<endl;
@@ -3903,6 +4110,7 @@ bool MotionComputation::isReachable(const Vector3d & direction){
 	
 	//cout << "cloud size: " << countx << endl;
 	//cout << "whats up" << endl;
+	msg->width = countx;
 	// Convert to ROS data type
   	sensor_msgs::PointCloud2 output;
   	pcl::toROSMsg(*msg, output);
@@ -4017,9 +4225,10 @@ bool MotionComputation::isReachable(const Vector3d & direction){
 		  	}
 		  	if(front_edge == cspace_length - 1){
 		  		//now we have reached our goal..
-		  		// but need to check if whole section is free..
-
-		  		int count_new_points = 1;
+		  		 
+		  		return true; 
+		  		// To check if whole section is free:
+		  		/*int count_new_points = 1;
 		  		// We want to fill the last cross section...
 		  		while(count_new_points !=0){
 		  			count_new_points = 0;
@@ -4089,7 +4298,8 @@ bool MotionComputation::isReachable(const Vector3d & direction){
                 else{
                     cout << "subgoal not reachable" << endl;
                     return false;
-                }
+                }*/
+
 
                 break;
                 //condition =false;

@@ -1,0 +1,10 @@
+<launch>
+
+
+	<include file = "$(find robot_setup_tf)/launch/octomap_mapping.launch" />
+
+
+	<node pkg="robot_setup_tf" type="unknown_octomap_to_spherical" name="unknown_octomap_to_spherical" output="screen" />
+
+
+</launch>

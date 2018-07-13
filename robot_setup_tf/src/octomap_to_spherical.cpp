@@ -56,7 +56,8 @@ OctomapToSpherical::OctomapToSpherical(ros::NodeHandle* nodehandle):nh_(*nodehan
     half_box_width_m_sq = pow(half_box_width_m, 2);
     // can also do tests/waits to make sure all required services, topics, etc are alive
 
-    initializeOctomap();
+    initializeOctomap();  // TO INITIALIZE WITH A FREE BOX ARUND THE ROBOT...
+    initializeFileName();
 }
 
 //member helper function to set up subscribers;
@@ -106,6 +107,22 @@ void OctomapToSpherical::initializePublishers()
 
     //add more publishers, as needed
     // note: COULD make minimal_publisher_ a public member function, if want to use it within "main()"
+}
+
+void OctomapToSpherical::initializeFileName(){
+
+    // to put date and time into the file name:
+    time_t rawtime;
+    struct tm * timeinfo;
+    char buffer[80];
+
+    time (&rawtime);
+    timeinfo = localtime(&rawtime);
+    strftime(buffer,sizeof(buffer),"%d-%m-%Y_%I:%M:%S",timeinfo);
+    std::string date_and_time(buffer);
+
+    filename = "/home/thorstef/catkin_ws/src/obstacle-avoidance/data/octomap_to_spherical_runtime/" + date_and_time + ".txt";
+
 }
 
 void OctomapToSpherical::initializeOctomap()
@@ -398,6 +415,8 @@ void OctomapToSpherical::octoMapCallback(const octomap_msgs::OctomapConstPtr& oc
     // if using non binary:
     //octomap::AbstractOcTree* tree = octomap_msgs::msgToMap(*msg);
     //octomap::OcTree* tree = dynamic_cast<OcTree*>(msg);
+
+    time_to_calculate_spherical_matrix = ros::Time::now().toSec();
 
     octomap::AbstractOcTree* oldtree = octomap_msgs::binaryMsgToMap(*octomap_msg);
     octomap::OcTree* tree = (octomap::OcTree*)oldtree;
@@ -851,6 +870,7 @@ void OctomapToSpherical::octoMapCallback(const octomap_msgs::OctomapConstPtr& oc
        //if (it.getSize() > 0.05 ) cout << "larger" ;
     }
 
+    time_to_calculate_spherical_matrix = ros::Time::now().toSec() - time_to_calculate_spherical_matrix;
 
 
 
@@ -882,7 +902,7 @@ void OctomapToSpherical::octoMapCallback(const octomap_msgs::OctomapConstPtr& oc
     //-------------------Transform again to point cloud for visualizing in rviz:------------------------
 
 
-    PointCloud::Ptr msg (new PointCloud);
+    /*PointCloud::Ptr msg (new PointCloud);
     msg->header.frame_id = "base_link";
     msg->height = 1;
     msg->width = (M-1)*N;
@@ -915,9 +935,11 @@ void OctomapToSpherical::octoMapCallback(const octomap_msgs::OctomapConstPtr& oc
     pcl::toROSMsg(*msg, output);
     // Publish the data
     pub.publish (output); 
-
+*/
 
     // -------------Try locating sub goals here in order to remove sub goals created on surfaces due to discretization:---------------
+
+    double time_to_locate_sub_goals = ros::Time::now().toSec();
 
     double difference;
     double subgoal_matrix [M][N] = {0};
@@ -1463,6 +1485,7 @@ void OctomapToSpherical::octoMapCallback(const octomap_msgs::OctomapConstPtr& oc
                                     subgoal_matrix[m][n+1-angular_offset] = sphere_matrix[m][n+1] + robot_radius*2;// + safety_distance;
                                 }
                             }
+                            else subgoal_matrix[m][n+1-angular_offset] = sphere_matrix[m][n+1] + robot_radius*2; //also mark unknown points
                         }
                     } 
                 }
@@ -1501,6 +1524,7 @@ void OctomapToSpherical::octoMapCallback(const octomap_msgs::OctomapConstPtr& oc
                                 //cout << "here 2" << endl;
                                 if(tree->search(point[0], point[1],point[2])->getValue() < 0) subgoal_matrix[m][n+angular_offset] = sphere_matrix[m][n] + robot_radius*2;
                             }
+                            else subgoal_matrix[m][n+angular_offset] = sphere_matrix[m][n] + robot_radius*2;     
                         }
                     }
                 } 
@@ -1648,7 +1672,8 @@ void OctomapToSpherical::octoMapCallback(const octomap_msgs::OctomapConstPtr& oc
                             //cout << "whats up" << endl;
                             if(tree->search(point[0], point[1],point[2])){
                                 if(tree->search(point[0], point[1],point[2])->getValue() < 0) subgoal_matrix[m+1-angular_offset][n] = sphere_matrix[m+1][n] + robot_radius*2; 
-                            }    
+                            }
+                            else subgoal_matrix[m+1-angular_offset][n] = sphere_matrix[m+1][n] + robot_radius*2; 
                         }
                         
 
@@ -1721,7 +1746,8 @@ void OctomapToSpherical::octoMapCallback(const octomap_msgs::OctomapConstPtr& oc
                             if(tree->search(point[0], point[1],point[2])){
                                 if(tree->search(point[0], point[1],point[2])->getValue() < 0) subgoal_matrix[m+angular_offset][n] = sphere_matrix[m][n] + robot_radius*2;
                                 //cout <<"yo !!!!!!!!!!!!!!1"  << endl;
-                            }   
+                            }  
+                            else subgoal_matrix[m+angular_offset][n] = sphere_matrix[m][n] + robot_radius*2;
                         }
                     }
                 } 
@@ -1811,6 +1837,7 @@ void OctomapToSpherical::octoMapCallback(const octomap_msgs::OctomapConstPtr& oc
         }
     }
 
+    time_to_locate_sub_goals = ros::Time::now().toSec() - time_to_locate_sub_goals;
 
 
     /*points_checked_msg->width = points_checked_msg->size();
@@ -1874,6 +1901,18 @@ void OctomapToSpherical::octoMapCallback(const octomap_msgs::OctomapConstPtr& oc
 
 
 
+
+    double secs =ros::Time::now().toSec();
+
+    const char *filename_char = filename.c_str();
+    
+
+    ofstream myfile;
+    myfile.open (filename_char, fstream::app);
+
+    myfile << ToString(secs) << " " << ToString(time_to_calculate_spherical_matrix) << " " << ToString(time_to_locate_sub_goals)<< endl;
+
+    myfile.close();
 
     //-------------------Transform again to point cloud for visualizing in rviz:------------------------
 
@@ -1973,7 +2012,13 @@ float OctomapToSpherical::dot(const Vector3d & vec1, const Vector3d & vec2){
      return result;
  }*/
 
-
+template <typename T>
+string OctomapToSpherical::ToString(T val)
+{
+  stringstream stream;
+  stream << val;
+  return stream.str();
+}
 
 int main(int argc, char** argv) 
 {

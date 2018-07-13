@@ -8,6 +8,8 @@
 	
 	<node pkg = "robot_control" type="record_data" name="record_data" output="screen" />
 	
+	<node pkg="robot_setup_tf" type="octomap_time_measuring" name="octomap_time_measuring" output="screen" />
+	
 	<node pkg="rviz" type="rviz" name="rviz" />
 
 </launch>

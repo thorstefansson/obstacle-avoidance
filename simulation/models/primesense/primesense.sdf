@@ -27,7 +27,7 @@
 			
       <sensor type="depth" name="primesense">
         <always_on>1</always_on>
-        <visualize>false</visualize>             
+        <visualize>false</visualize>      <!-- To visualize what the sensor sees -->       
         <camera>
 
 	<!-- some specs of camera primesense 1.09:

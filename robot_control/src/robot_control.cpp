@@ -412,7 +412,7 @@ void RobotControl::robotPositionCallback(const geometry_msgs::PoseStampedConstPt
                 else if(theta > pi) theta -= 2*pi;
 
 
-               	if(nearest_obstacle_distance < robot_radius ){ // + 0.05
+               	if(nearest_obstacle_distance < robot_radius + 0.02 ){ // + 0.05
                		// very close to obstacle, fly in opposite direction.. 
                		set_velocity.header.frame_id = "base_link";
                     set_velocity.header.stamp = ros::Time::now();
@@ -425,7 +425,7 @@ void RobotControl::robotPositionCallback(const geometry_msgs::PoseStampedConstPt
                         v=v_max;
                     }
                     else{
-                        v = (robot_radius - nearest_obstacle_distance)*0.3 +0.02; //+0.01   
+                        v = (robot_radius + 0.02 - nearest_obstacle_distance)*0.3 +0.02; //+0.01   
                     }
                     
                		theta_close_obstacle = nearest_obstacle_distance_n *  pi / M - pi;

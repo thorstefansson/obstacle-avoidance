@@ -13,6 +13,7 @@ MotionComputation::MotionComputation(ros::NodeHandle* nodehandle):nh_(*nodehandl
     //sleep(200);
     initializeSubscribers(); // package up the messy work of creating subscribers; do this overhead in constructor
     initializePublishers();
+
     //initializeServices();
     
     //initialize variables here, as needed
@@ -28,6 +29,8 @@ MotionComputation::MotionComputation(ros::NodeHandle* nodehandle):nh_(*nodehandl
     //robot_diameter = 0.7;//0.8;
 	robot_radius = 0.4;//0.2;
     robot_diameter = 0.8;
+
+    sin27komma5 = sin(27.5*pi/180);
 
     //safety_distance = 0.5;
     alpha_safety_distance = 0.8;
@@ -74,6 +77,9 @@ MotionComputation::MotionComputation(ros::NodeHandle* nodehandle):nh_(*nodehandl
     cout <<"done running initializeSphere" << endl;
     initializeUnitaryVectors();
     cout <<"done running initializeUnitaryVectors" << endl;
+
+    previous_time_of_callback = 0;
+    initializeFileName();
 
     // can also do tests/waits to make sure all required services, topics, etc are alive
 }
@@ -164,6 +170,23 @@ void MotionComputation::initializeUnitaryVectors()
 
 }
 
+void MotionComputation::initializeFileName(){
+
+    // to put date and time into the file name:
+    time_t rawtime;
+    struct tm * timeinfo;
+    char buffer[80];
+
+    time (&rawtime);
+    timeinfo = localtime(&rawtime);
+    strftime(buffer,sizeof(buffer),"%d-%m-%Y_%I:%M:%S",timeinfo);
+    std::string date_and_time(buffer);
+
+    filename = "/home/thorstef/catkin_ws/src/obstacle-avoidance/data/runtime/" + date_and_time + ".txt";
+
+    // filename_octomap = "/home/thorstef/catkin_ws/src/obstacle-avoidance/data/octomap_callback_runtime/" + date_and_time + ".txt";
+
+}
 
 void MotionComputation::initializeSphere()
 {
@@ -373,8 +396,6 @@ void MotionComputation::sphericalMatrixCallback(const std_msgs::Float32MultiArra
 
 	//cout << "xy distance from origin is: " << sqrt(pow(robot_position[0],2) + pow(robot_position[1],2)) << endl;
 
-
-
 	float dstride0 = matrix_msg->layout.dim[0].stride;
 	float dstride1 = matrix_msg->layout.dim[1].stride;
 	float h = matrix_msg->layout.dim[0].size;
@@ -433,11 +454,66 @@ void MotionComputation::sphericalMatrixCallback(const std_msgs::Float32MultiArra
 	robot_sphere_matrix_orientation[3] = sphere_matrix[0][6];
 
 
+
+	// ------------------------------Now add sonar data to sphere matrix---------------------------------
+
+
+
+	//First to account for vertical offset:
+	//ah let's only account for vertical offset for now...
+	//sonar up:
+	double cone_up_degrees = atan(range_up * sin27komma5/ (sonar_up_vertical_offset + range_up)); 
+	int degree_limit = M - ceil(cone_up_degrees * M/pi);
+
+	// Check if alreadey seen by octomap....
+
+	bool add_sonar_data = true;
+
+	for (m = degree_limit; m<M ; m++){
+		for(n=0;n<N;n++){
+			if(abs(sphere_matrix[m][n]-(sonar_up_vertical_offset + range_up)) < 0.15){
+				add_sonar_data = false;
+				goto here1;
+			}
+		}
+	}
+	here1:
+
+	if(add_sonar_data && range_up < max_sonar_range){
+		for (m = degree_limit; m<M ; m++){
+			for(n=0;n<N;n++){
+				sphere_matrix[m][n]=sonar_up_vertical_offset + range_up;
+			}
+		}
+	}
+	double cone_down_degrees = atan(range_down * sin27komma5/ (-sonar_down_vertical_offset + range_down));
+	degree_limit = ceil(cone_down_degrees * M/pi);
+	
+	add_sonar_data = true;
+
+	for (m = 0; m<degree_limit ; m++){
+		for(n=0;n<N;n++){
+			if(abs(sphere_matrix[m][n] - (-sonar_down_vertical_offset + range_down)) < 0.15){
+				add_sonar_data = false;
+				goto here2;
+			}
+		}
+	}
+	here2:
+
+	if(add_sonar_data && range_down < max_sonar_range){
+		for (m = 0; m<degree_limit ; m++){
+			for(n=0;n<N;n++){
+				sphere_matrix[m][n]= -sonar_down_vertical_offset + range_down;
+			}
+		}
+	}
+
 	//-------------------Transform again to point cloud for visualizing in rviz:------------------------
 
 	double x, y, z, r, rho, phi, theta;
 
-	/*PointCloud::Ptr msg (new PointCloud);
+	PointCloud::Ptr msg (new PointCloud);
 	msg->header.frame_id = "base_link";
 	msg->height = 1;
 	msg->width = M*N;
@@ -469,7 +545,10 @@ void MotionComputation::sphericalMatrixCallback(const std_msgs::Float32MultiArra
   	sensor_msgs::PointCloud2 output;
   	pcl::toROSMsg(*msg, output);
   	// Publish the data
-  	pub.publish (output);*/
+  	pub.publish (output);
+
+
+
 
 
 
@@ -532,7 +611,7 @@ void MotionComputation::sphericalMatrixCallback(const std_msgs::Float32MultiArra
   		
   		// Locate subgoals directly up / down depending on sub goals located outside the view of the camera:
   		//max is like 27-41 for M = 60 for the camera view
-  		double relative_height = goal_position[2] - robot_sphere_matrix_position[2];
+  		/*double relative_height = goal_position[2] - robot_sphere_matrix_position[2];
   		double closest_subgoal_distance =1000000;
 
   		m_min = 40*M/60;
@@ -578,7 +657,7 @@ void MotionComputation::sphericalMatrixCallback(const std_msgs::Float32MultiArra
 
   				}
   			}
-  		}
+  		}*/
 
   		//cout << "m_min: " << m_min << " m_max: " << m_max << " M: " << M; 
 
@@ -937,6 +1016,14 @@ void MotionComputation::goalPositionCallback(const geometry_msgs::Vector3ConstPt
 
 	//cout << "in goal position callback " << endl;
 
+	// Now try calculating time between callbacks:
+	time_between_callbacks =ros::Time::now().toSec() - previous_time_of_callback;
+	previous_time_of_callback = ros::Time::now().toSec();
+	time_to_run_callback = ros::Time::now().toSec();
+
+	int number_of_target_points_checked = 1;
+
+
 	goal_position[0] = input->x;
 	goal_position[1] = input->y;
 	goal_position[2] = input->z;
@@ -969,6 +1056,7 @@ void MotionComputation::goalPositionCallback(const geometry_msgs::Vector3ConstPt
     //cout<<"what's happening"<< endl;
     //if the goal is not directly above or below the robot:
 	target_calculated = false;
+	time_to_find_reachable_goal = ros::Time::now().toSec();
     if(abs(direction_vector[2])/ xy_length_of_direction_vector < 2.8){ // This if sentence seems to be unnecessary since we are not turning the robot anymore in this program
 
         //turn robot in xy plane in direction of goal
@@ -1235,6 +1323,7 @@ void MotionComputation::goalPositionCallback(const geometry_msgs::Vector3ConstPt
 
                     //cout << "subgoal, global orientation: " << subgoal_vector << endl;
                     cout << "subgoal number " << vecitr << " selected" << endl;
+                    number_of_target_points_checked += 1+vecitr;
                     // Transform to global frame before publishing to topic.  
                     target_vector.x = subgoal_xyz[distance_index_vector[vecitr].second][5];
 		    		target_vector.y = subgoal_xyz[distance_index_vector[vecitr].second][6];
@@ -1454,6 +1543,7 @@ void MotionComputation::goalPositionCallback(const geometry_msgs::Vector3ConstPt
 
                     //cout << "subgoal, global orientation: " << subgoal_vector << endl;
                     cout << "subgoal number " << vecitr << " selected" << endl;
+                    number_of_target_points_checked += 1+vecitr;
                     // Transform to global frame before publishing to topic.  
                     target_vector.x = subgoal_xyz[distance_index_vector[vecitr].second][5];
 		    		target_vector.y = subgoal_xyz[distance_index_vector[vecitr].second][6];
@@ -1484,6 +1574,7 @@ void MotionComputation::goalPositionCallback(const geometry_msgs::Vector3ConstPt
     	target_calculated = true;
 
     }  
+    time_to_find_reachable_goal = ros::Time::now().toSec() - time_to_find_reachable_goal;
 	//cout << "direction_vector: " << direction_vector << endl;
 
     //cout <<  "subgoal_point: " << subgoal_point << endl;
@@ -1491,6 +1582,9 @@ void MotionComputation::goalPositionCallback(const geometry_msgs::Vector3ConstPt
 
 	//------------------------------------------------------MOTION COMPUTATION--------------------------------------------------
 
+    
+
+    double time_to_calculate_direction_of_motion, time_to_calculate_S_nD, time_to_calculate_S2=0;
     // First we need to devide the space (spherical matrix) into subspaces..
 
     // First of all devide it into top / down - left / right..
@@ -1502,6 +1596,7 @@ void MotionComputation::goalPositionCallback(const geometry_msgs::Vector3ConstPt
     if(target_calculated){
 
 	    if(!nothing_reachable){
+	    	time_to_calculate_S_nD = ros::Time::now().toSec();
 	    	if(subgoal_point){
 		    	target_direction[0] = x1;
 		    	target_direction[1] = y1;
@@ -1652,7 +1747,7 @@ void MotionComputation::goalPositionCallback(const geometry_msgs::Vector3ConstPt
 			} 
 			else m_temp_min= 1;*/
 
-
+			time_to_calculate_S2 = ros::Time::now().toSec();
 
 			bool bad_angle = false;
 			for(m = m_temp_min; m<M; m++){
@@ -1668,7 +1763,7 @@ void MotionComputation::goalPositionCallback(const geometry_msgs::Vector3ConstPt
 		                u_obst[0] = r * cos(theta);
 		                u_obst[1] = r * sin(theta);
 		                u_obst[2] = sin(phi);
-		                obst_dist = vectorlength(u_obst);
+		                //obst_dist = vectorlength(u_obst);
 		                vector<double> row1;
 						n_D = cross ( cross(u_targ, u_obst), u_obst);
 						row1.push_back(n_D[0]);
@@ -1704,20 +1799,23 @@ void MotionComputation::goalPositionCallback(const geometry_msgs::Vector3ConstPt
 								//cout << " N: " << N << " ";
 								//cout << "m_min: " << m_min << " m_max: " << m_max << endl;
 								//for(int i =0; i < M*N; i++){}
-								for(m1=m_min;m1<m_max;m1++){ // this is possibly not the fastest way.....
+								for(m1=m_min;m1<m_max;m1++){ // this is possibly not the fastest way..... seems to be pretty slow actually... 
 									for(n1=0;n1<N;n1++){
-										u[0] = unitary_direction_vectors_matrix[m1][n1][0];
-										u[1] = unitary_direction_vectors_matrix[m1][n1][1];
-										u[2] = unitary_direction_vectors_matrix[m1][n1][2];
-										gamma_i = abs(acos(dot(u,u_obst)));
-										// To locate a little from boundary:
-										if(gamma_i<gamma){
-											// this means we are within S_2
-											S_nD_DL[m1][n1]=true;
-										}
-										else if(abs(gamma_i - gamma) <matrix_radian_resolution){
-											//this means we're on the boundary of S_2, but not within limits.. 
-											S_DL_bound[m1][n1] = true;
+										if(!S_nD_DL[m1][n1]){ // only check if not already marked...
+											u[0] = unitary_direction_vectors_matrix[m1][n1][0];
+											u[1] = unitary_direction_vectors_matrix[m1][n1][1];
+											u[2] = unitary_direction_vectors_matrix[m1][n1][2];
+										
+											gamma_i = abs(acos(dot(u,u_obst)));
+											// To locate a little from boundary:
+											if(gamma_i<gamma){
+												// this means we are within S_2
+												S_nD_DL[m1][n1]=true;
+											}
+											else if(abs(gamma_i - gamma) <matrix_radian_resolution){
+												//this means we're on the boundary of S_2, but not within limits.. 
+												S_DL_bound[m1][n1] = true;
+											}
 										}
 										// if(abs(gamma_i - gamma) < matrix_half_radian_resolution){
 										// 	//this means we're on the boundary of S_2
@@ -1750,21 +1848,22 @@ void MotionComputation::goalPositionCallback(const geometry_msgs::Vector3ConstPt
 								}
 								for(m1=m_min;m1<m_max;m1++){
 									for(n1=0;n1<N;n1++){
-										u[0] = unitary_direction_vectors_matrix[m1][n1][0];
-										u[1] = unitary_direction_vectors_matrix[m1][n1][1];
-										u[2] = unitary_direction_vectors_matrix[m1][n1][2];
-										gamma_i = abs(acos(dot(u,u_obst)));
-										
-										// To locate a little from boundary:
-										if(gamma_i<gamma){
-											// this means we are within S_2
-											S_nD_TL[m1][n1]=true;
-										}
-										else if(abs(gamma_i - gamma) <matrix_radian_resolution){
-											//this means we're on the boundary of S_2, but not within limits.. 
-											S_TL_bound[m1][n1] = true;
-										}
 
+										if(!S_nD_TL[m1][n1]){
+											u[0] = unitary_direction_vectors_matrix[m1][n1][0];
+											u[1] = unitary_direction_vectors_matrix[m1][n1][1];
+											u[2] = unitary_direction_vectors_matrix[m1][n1][2];
+											gamma_i = abs(acos(dot(u,u_obst)));
+											// To locate a little from boundary:
+											if(gamma_i<gamma){
+												// this means we are within S_2
+												S_nD_TL[m1][n1]=true;
+											}
+											else if(abs(gamma_i - gamma) <matrix_radian_resolution){
+												//this means we're on the boundary of S_2, but not within limits.. 
+												S_TL_bound[m1][n1] = true;
+											}
+										}
 										// To locate "exactly" on boundary:
 										// if(abs(gamma_i - gamma) < spherical_matrix_degree_resolution * pi / 360){ //try changing this.. 
 										// 	//this means we're on the boundary of S_2
@@ -1797,20 +1896,21 @@ void MotionComputation::goalPositionCallback(const geometry_msgs::Vector3ConstPt
 								}
 								for(m1=m_min;m1<m_max;m1++){
 									for(n1=0;n1<N;n1++){
-										u[0] = unitary_direction_vectors_matrix[m1][n1][0];
-										u[1] = unitary_direction_vectors_matrix[m1][n1][1];
-										u[2] = unitary_direction_vectors_matrix[m1][n1][2];
-										gamma_i = abs(acos(dot(u,u_obst)));
-										// To locate a little from boundary:
-										if(gamma_i<gamma){
-											// this means we are within S_2
-											S_nD_TR[m1][n1]=true;
+										if(!S_nD_TR[m1][n1]){
+											u[0] = unitary_direction_vectors_matrix[m1][n1][0];
+											u[1] = unitary_direction_vectors_matrix[m1][n1][1];
+											u[2] = unitary_direction_vectors_matrix[m1][n1][2];
+											gamma_i = abs(acos(dot(u,u_obst)));
+											// To locate a little from boundary:
+											if(gamma_i<gamma){
+												// this means we are within S_2
+												S_nD_TR[m1][n1]=true;
+											}
+											else if(abs(gamma_i - gamma) <matrix_radian_resolution){
+												//this means we're on the boundary of S_2, but not within limits.. 
+												S_TR_bound[m1][n1] = true;
+											}
 										}
-										else if(abs(gamma_i - gamma) <matrix_radian_resolution){
-											//this means we're on the boundary of S_2, but not within limits.. 
-											S_TR_bound[m1][n1] = true;
-										}
-
 										// if(abs(gamma_i - gamma) < spherical_matrix_degree_resolution * pi / 360){
 										// 	//this means we're on the boundary of S_2
 										// 	S_TR_bound[m1][n1] = true;
@@ -1839,18 +1939,20 @@ void MotionComputation::goalPositionCallback(const geometry_msgs::Vector3ConstPt
 								}
 								for(m1=m_min;m1<m_max;m1++){ 
 									for(n1=0;n1<N;n1++){
-										u[0] = unitary_direction_vectors_matrix[m1][n1][0];
-										u[1] = unitary_direction_vectors_matrix[m1][n1][1];
-										u[2] = unitary_direction_vectors_matrix[m1][n1][2];
-										gamma_i = abs(acos(dot(u,u_obst)));
-										// To locate a little from boundary:
-										if(gamma_i<gamma){
-											// this means we are within S_2
-											S_nD_DR[m1][n1]=true;
-										}
-										else if(abs(gamma_i - gamma) <matrix_radian_resolution){
-											//this means we're on the boundary of S_2, but not within limits.. 
-											S_DR_bound[m1][n1] = true;
+										if(!S_nD_DR[m1][n1]){
+											u[0] = unitary_direction_vectors_matrix[m1][n1][0];
+											u[1] = unitary_direction_vectors_matrix[m1][n1][1];
+											u[2] = unitary_direction_vectors_matrix[m1][n1][2];
+											gamma_i = abs(acos(dot(u,u_obst)));
+											// To locate a little from boundary:
+											if(gamma_i<gamma){
+												// this means we are within S_2
+												S_nD_DR[m1][n1]=true;
+											}
+											else if(abs(gamma_i - gamma) < matrix_radian_resolution){
+												//this means we're on the boundary of S_2, but not within limits.. 
+												S_DR_bound[m1][n1] = true;
+											}
 										}
 										// if(abs(gamma_i - gamma) < spherical_matrix_degree_resolution * pi / 360){
 										// 	//this means we're on the boundary of S_2
@@ -1872,6 +1974,7 @@ void MotionComputation::goalPositionCallback(const geometry_msgs::Vector3ConstPt
 				}
 			}
 
+			time_to_calculate_S2 = ros::Time::now().toSec()-time_to_calculate_S2;
 			/*cout << "S_nD_DR without S1: " << endl;
 			for(m=M-1;m>=0;m--){
 				for(n=N-1;n>=0;n--){
@@ -2070,7 +2173,7 @@ void MotionComputation::goalPositionCallback(const geometry_msgs::Vector3ConstPt
 				}
 			}
 
-
+			time_to_calculate_S_nD = ros::Time::now().toSec() - time_to_calculate_S_nD;
 
 			// OK, so now I have the S_nD for each quarter....
 
@@ -2109,6 +2212,7 @@ void MotionComputation::goalPositionCallback(const geometry_msgs::Vector3ConstPt
 
 			// ---------------------- Now find the most promising direction of motion ---------------------------
 
+			time_to_calculate_direction_of_motion = ros::Time::now().toSec();
 			// Check if there exist any free directions:
 			bool free_direction = false;
 			for(m=0;m<M;m++){
@@ -2716,14 +2820,19 @@ void MotionComputation::goalPositionCallback(const geometry_msgs::Vector3ConstPt
 				msg->points.push_back(pcl::PointXYZ(u_DL_dom[0],u_DL_dom[1],u_DL_dom[2]));
 
 				// target direction belongs to all four sets of motion constraints..
-				/*cout << "target direction belongs to all 4 sets of motion constraints" << endl;
-				/Vector3d u_TR_DL_dom, u_TL_DR_dom, n_E, n_F;
+				cout << "target direction belongs to all 4 sets of motion constraints" << endl;
+				// Vector3d u_TR_DL_dom, u_TL_DR_dom, n_E, n_F;
 				
-				u_TL_DR_dom = (u_DR_dom + u_TL_dom) / 2;
-				u_TR_DL_dom = (u_TR_dom + u_DL_dom) / 2;
-				n_E = cross(cross(u_TL_dom, u_DR_dom), u_TL_DR_dom);
-				n_F = cross(cross(u_TR_dom, u_DL_dom), u_TR_DL_dom);
-				u_sol = cross(n_E, n_F);*/
+				// u_TL_DR_dom = (u_DR_dom + u_TL_dom) / 2;
+				// u_TR_DL_dom = (u_TR_dom + u_DL_dom) / 2;
+				// n_E = cross(cross(u_TL_dom, u_DR_dom), u_TL_DR_dom);
+				// n_F = cross(cross(u_TR_dom, u_DL_dom), u_TR_DL_dom);
+				// u_sol = cross(n_E, n_F);
+
+				// cout << "u_TL_dom: " << u_TL_dom[0] << " " << u_TL_dom[1] << " " << u_TL_dom[2] << endl;
+				// cout << "u_DR_dom: " << u_DR_dom[0] << " " << u_DR_dom[1] << " " << u_DR_dom[2] << endl;
+				// cout << "u_DL_dom: " << u_DL_dom[0] << " " << u_DL_dom[1] << " " << u_DL_dom[2] << endl;
+				// cout << "u_TR_dom: " << u_TR_dom[0] << " " << u_TR_dom[1] << " " << u_TR_dom[2] << endl;
 
 				// Try using medium value instead:
 				u_sol = (u_DR_dom + u_TL_dom + u_TR_dom + u_DL_dom) / 4;
@@ -2731,8 +2840,9 @@ void MotionComputation::goalPositionCallback(const geometry_msgs::Vector3ConstPt
 
 			//cout << "u_sol : " << u_sol << endl;
 			// To send vector with correct length instead of unitary vector:
-    		cout << "u_sol:" << u_sol << endl;
+    		cout << "u_sol:" << u_sol[0] << " " << u_sol[1] << " " << u_sol[2] << endl;
 
+    		u_sol /= vectorlength(u_sol);
     		u_sol *= target_distance;
 
     		// To publish the u_dom vectors to cloud:
@@ -2742,6 +2852,8 @@ void MotionComputation::goalPositionCallback(const geometry_msgs::Vector3ConstPt
 		  	// Publish the data
 		  	pub_u_dom_cloud.publish (output);
 
+		  	time_to_calculate_direction_of_motion = ros::Time::now().toSec() - time_to_calculate_direction_of_motion;
+
 	    } // end of if (!nothing_reachable)
 	    else{
 	    	// put something into u_sol that makes it evident it has not been published in a normal way
@@ -2749,6 +2861,9 @@ void MotionComputation::goalPositionCallback(const geometry_msgs::Vector3ConstPt
 	    	u_sol[0] = 1000;
 	    	u_sol[1] = 0;
 	    	u_sol[2] = 0;
+
+	    	time_to_calculate_S_nD = 0;
+	    	time_to_calculate_direction_of_motion = 0;
 	    }
 	} // end of if(target_calculated)  
 	else{
@@ -2757,6 +2872,9 @@ void MotionComputation::goalPositionCallback(const geometry_msgs::Vector3ConstPt
     	u_sol[0] = 1000;
     	u_sol[1] = 0;
     	u_sol[2] = 0;
+
+    	time_to_calculate_S_nD = 0;
+    	time_to_calculate_direction_of_motion = 0;
     }
 
     //publish u sol rather as a global position since robot may have shifted in orientation / location
@@ -2799,6 +2917,25 @@ void MotionComputation::goalPositionCallback(const geometry_msgs::Vector3ConstPt
     // Publish the data
     pub_u_sol_cloud.publish (output);
 
+
+
+
+    time_to_run_callback = ros::Time::now().toSec() - time_to_run_callback;
+    //write times to file:
+
+    double secs =ros::Time::now().toSec();
+
+    const char *filename_char = filename.c_str();
+    
+
+    ofstream myfile;
+    myfile.open (filename_char, fstream::app);
+
+    myfile << ToString(secs) << " " << ToString(time_between_callbacks) << " " << ToString(time_to_run_callback) << " " << ToString(time_to_find_reachable_goal) << " " 
+    	<< ToString(time_to_calculate_S_nD) << " " << ToString(time_to_calculate_S2) << " " << ToString(number_of_target_points_checked) << endl;
+
+    myfile.close();
+
 }
 
 void MotionComputation::robotPositionCallback(const geometry_msgs::PoseStampedConstPtr& input) {
@@ -2820,8 +2957,27 @@ void MotionComputation::robotPositionCallback(const geometry_msgs::PoseStampedCo
 void MotionComputation::octoMapCallback(const octomap_msgs::OctomapConstPtr& octomap_msg){
 
 	//cout << "in octomap callback" << endl;
+
+	// time_between_octomap_callbacks =ros::Time::now().toSec() - previous_time_of_octomap_callback;
+	// previous_time_of_octomap_callback = ros::Time::now().toSec();
+
+	// double time_to_run_octomap_callback = previous_time_of_octomap_callback;
+
     octomap::AbstractOcTree* oldtree = octomap_msgs::binaryMsgToMap(*octomap_msg);
     tree = (octomap::OcTree*)oldtree;
+
+
+    // time_to_run_octomap_callback = ros::Time::now().toSec() - time_to_run_octomap_callback;
+    // double secs =ros::Time::now().toSec();
+
+    // const char *filename_char = filename_octomap.c_str();
+
+    // ofstream myfile;
+    // myfile.open (filename_char, fstream::app);
+
+    // myfile << ToString(secs) << " " << ToString(time_between_octomap_callbacks) << " " << ToString(time_to_run_octomap_callback)<< endl;
+
+    // myfile.close();
 
 }
 
@@ -2959,6 +3115,14 @@ float MotionComputation::dot(const Vector3d & vec1, const Vector3d & vec2){
 float MotionComputation::vectorlength(const Vector3d & vec){
 	
 	return ( sqrt(vec[0]*vec[0] + vec[1]*vec[1] + vec[2]*vec[2]) );
+}
+
+template <typename T>
+string MotionComputation::ToString(T val)
+{
+  stringstream stream;
+  stream << val;
+  return stream.str();
 }
 
 int main(int argc, char** argv)
@@ -4148,48 +4312,48 @@ bool MotionComputation::isReachable(const Vector3d & direction){
 		  			// check if point is in edge points:
 		  			if(edge_points[front_edge][y_itr][z_itr] == 1){
 		  				//cout << "found edge point" << endl;
-		  				// mark all surrounding points that are free as edge points 
-		  				if(y_itr < cspace_width -1){
-			  				if(Cspace[front_edge][y_itr+1][z_itr] == 0){
-			  					Cspace[front_edge][y_itr+1][z_itr] = 2;
-			  					edge_points[front_edge][y_itr+1][z_itr] = 1;
-			  					if(new_front_edge < front_edge) new_front_edge = front_edge;
-			  				}
-			  			}
-			  			//cout << "2";
-			  			if(y_itr>0){
-			  				if(Cspace[front_edge][y_itr-1][z_itr] == 0){
-			  					Cspace[front_edge][y_itr-1][z_itr] = 2;
-			  					edge_points[front_edge][y_itr-1][z_itr] = 1;
-			  					if(new_front_edge < front_edge) new_front_edge = front_edge;
-			  				}
-			  			}
-			  			//cout << "3";
-			  			if(z_itr< cspace_width -1){
-			  				if(Cspace[front_edge][y_itr][z_itr+1] == 0){
-			  					Cspace[front_edge][y_itr][z_itr+1] = 2;
-			  					edge_points[front_edge][y_itr][z_itr+1] = 1;
-			  					if(new_front_edge < front_edge) new_front_edge = front_edge;
-			  				}
-			  			}
-			  			//cout << "4";
-			  			if(z_itr >0) {
-			  				if(Cspace[front_edge][y_itr][z_itr-1] == 0){
-			  					Cspace[front_edge][y_itr][z_itr-1] = 2;
-			  					edge_points[front_edge][y_itr][z_itr-1] = 1;
-			  					if(new_front_edge < front_edge) new_front_edge = front_edge;
-			  				}
-			  			}
-			  			//cout << "5";
-			  			if(Cspace[front_edge+1][y_itr][z_itr] == 0){
+		  				if(Cspace[front_edge+1][y_itr][z_itr] == 0){
 		  					Cspace[front_edge+1][y_itr][z_itr] = 2;
 		  					edge_points[front_edge+1][y_itr][z_itr] = 1;
 		  					new_front_edge = front_edge+1;
 		  					goto next;
 		  				}
-			  			//cout << "6" ; 
-		  				// unmark this point as edge point
-		  				edge_points[front_edge][y_itr][z_itr] = 0;
+		  				else{
+			  				// mark all surrounding points that are free as edge points 
+			  				if(y_itr < cspace_width -1){
+				  				if(Cspace[front_edge][y_itr+1][z_itr] == 0){
+				  					Cspace[front_edge][y_itr+1][z_itr] = 2;
+				  					edge_points[front_edge][y_itr+1][z_itr] = 1;
+				  					if(new_front_edge < front_edge) new_front_edge = front_edge;
+				  				}
+				  			}
+				  			//cout << "2";
+				  			if(y_itr>0){
+				  				if(Cspace[front_edge][y_itr-1][z_itr] == 0){
+				  					Cspace[front_edge][y_itr-1][z_itr] = 2;
+				  					edge_points[front_edge][y_itr-1][z_itr] = 1;
+				  					if(new_front_edge < front_edge) new_front_edge = front_edge;
+				  				}
+				  			}
+				  			//cout << "3";
+				  			if(z_itr< cspace_width -1){
+				  				if(Cspace[front_edge][y_itr][z_itr+1] == 0){
+				  					Cspace[front_edge][y_itr][z_itr+1] = 2;
+				  					edge_points[front_edge][y_itr][z_itr+1] = 1;
+				  					if(new_front_edge < front_edge) new_front_edge = front_edge;
+				  				}
+				  			}
+				  			//cout << "4";
+				  			if(z_itr >0) {
+				  				if(Cspace[front_edge][y_itr][z_itr-1] == 0){
+				  					Cspace[front_edge][y_itr][z_itr-1] = 2;
+				  					edge_points[front_edge][y_itr][z_itr-1] = 1;
+				  					if(new_front_edge < front_edge) new_front_edge = front_edge;
+				  				}
+				  			}
+				  			// unmark this point as edge point
+		  					edge_points[front_edge][y_itr][z_itr] = 0;
+				  		}
 		  				// check if next points should be marked as front edge (or back edge...)
 		  			}
 		  		}

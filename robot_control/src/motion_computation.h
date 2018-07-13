@@ -35,6 +35,9 @@
 #include <pcl_ros/point_cloud.h>
 #include <iostream>
 
+#include <fstream>
+#include <ctime>
+
 #include "geometry_msgs/Vector3.h"
 #include "geometry_msgs/PoseStamped.h"
 
@@ -100,6 +103,9 @@ private:
     ros::Publisher pub_target_position;
     
     double val_from_subscriber_; //example member variable: better than using globals; convenient way to pass data from a subscriber to other member functions
+    double time_between_callbacks, time_to_find_reachable_goal, previous_time_of_callback, time_to_run_callback;
+    // double time_between_octomap_callbacks, previous_time_of_octomap_callback;
+    double sin27komma5;
     //double goal_position [3];
     //double robot_position [3];
     //vector<double> goal_position;
@@ -205,6 +211,9 @@ private:
     bool goal_point , subgoal_point;
     
     double camera_x_offset;
+    string filename, filename_octomap;
+
+    template <typename T> string ToString(T val);
 
     typedef std::pair<double,int> distance_and_index;
     struct comparator{
@@ -237,6 +246,7 @@ private:
     float vectorlength(const Vector3d & vec);
     void initializeSphere();
     void initializeUnitaryVectors();
+    void initializeFileName();
     //bool comparator ( const distance_and_index& l, const distance_and_index& r);
     struct comparator;
     //void addObstacleSphere(int obstacle_point_center_x, int obstacle_point_center_y, int obstacle_point_center_z, int cspace_length);

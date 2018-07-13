@@ -154,6 +154,9 @@ add_executable(laser_octomap src/laser_octomap.cpp)
 add_executable(sensors_to_spherical src/sensors_to_spherical.cpp)
 add_executable(octomap_to_spherical src/octomap_to_spherical.cpp)
 add_executable(unknown_octomap_to_spherical src/unknown_octomap_to_spherical.cpp)
+add_executable(teraranger_to_point_cloud src/teraranger_to_point_cloud.cpp)
+
+add_executable(octomap_time_measuring src/octomap_time_measuring.cpp)
 
 target_link_libraries(tf_robot ${catkin_LIBRARIES})
 
@@ -167,6 +170,11 @@ target_link_libraries(cloud_to_spherical ${catkin_LIBRARIES})
 target_link_libraries(sensors_to_spherical ${catkin_LIBRARIES})
 target_link_libraries(octomap_to_spherical ${catkin_LIBRARIES})
 target_link_libraries(unknown_octomap_to_spherical ${catkin_LIBRARIES})
+
+target_link_libraries(teraranger_to_point_cloud ${catkin_LIBRARIES})
+
+target_link_libraries(octomap_time_measuring ${catkin_LIBRARIES})
+
 #target_link_libraries(${OCTOMAP_LIBRARIES})
 
 link_directories(${OCTOMAP_LIBRARY_DIRS})

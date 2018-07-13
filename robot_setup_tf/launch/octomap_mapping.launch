@@ -22,6 +22,8 @@
 	
 	<node pkg="robot_setup_tf" type="sonars_to_point_cloud" name="sonars_to_point_cloud" output="screen" />
 
+  <node pkg="robot_setup_tf" type="teraranger_to_point_cloud" name="teraranger_to_point_cloud" output="screen" />
+
 	<!-- <node pkg="rviz" type="rviz" name="rviz" /> -->
 
 	<node pkg="octomap_server" type="octomap_server_node" name="octomap_server">
@@ -34,10 +36,14 @@
 		<param name="sensor_model/max_range" value="5.0" />
 
 		<!-- To see free space in rviz: -->
-		<param name="publish_free_space" value="true"/>
+		<!-- <param name="publish_free_space" value="true"/> -->
 		
 		<!-- data source to integrate (PointCloud2) -->
 		<!-- <remap from="cloud_in" to="/laser_cloud" /> -->
 		<remap from="cloud_in" to="/cloud_to_octomap" /> 
 	</node>
+	
+	<!-- To measure time between updating OctoMap: -->
+	<!-- <node pkg="robot_setup_tf" type="octomap_time_measuring" name="octomap_time_measuring" output="screen" /> -->
+	
 </launch>

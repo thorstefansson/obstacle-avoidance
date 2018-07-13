@@ -40,6 +40,8 @@
 #include <octomap_msgs/BoundingBoxQuery.h>
 
 #include <iostream>
+#include <fstream>
+#include <ctime>
 
 // To receive occupancy matrix:
 #include <std_msgs/Float32MultiArray.h>
@@ -107,13 +109,17 @@ private:
     double robot_radius;
 //    double robot_diameter;
     double safety_distance;
+    string filename;
+
+    template <typename T> string ToString(T val);
 
     double laser_vertical_offset;
     
     double val_from_subscriber_; //example member variable: better than using globals; convenient way to pass data from a subscriber to other member functions
     double val_to_remember_; // member variables will retain their values even as callbacks come and go
     double resolution, pi, deg_resolution, half_box_width_m_sq, half_box_width_m;
-    
+    double time_to_calculate_spherical_matrix;
+
     // member methods as well:
     void initializeSubscribers(); // we will define some helper methods to encapsulate the gory details of initializing subscribers, publishers and services
     void initializePublishers();
@@ -128,6 +134,8 @@ private:
     void octoMapCallback(const octomap_msgs::OctomapConstPtr& msg);
     //prototype for callback for example service
     bool serviceCallback(std_srvs::TriggerRequest& request, std_srvs::TriggerResponse& response);
+
+    void initializeFileName();
 
 
     float dot(const Vector3d & vec1, const Vector3d & vec2);

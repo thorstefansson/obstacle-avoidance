@@ -267,7 +267,7 @@ void SensorsToSpherical::cameraCallback(const sensor_msgs::PointCloud2ConstPtr& 
 
 	//ah let's only account for vertical offset for now...
 	//sonar up:
-	double cone_up_degrees = asin(range_up * sin22komma5/ (sonar_up_vertical_offset + range_up));
+	double cone_up_degrees = asin(range_up * sin22komma5/ (sonar_up_vertical_offset + range_up)); // Should use atan instead of asin.
 	int degree_limit = M - ceil(cone_up_degrees * M/pi) - 1;
 	degree_limits.data.push_back(degree_limit);
 	degree_limits.data.push_back(sonar_up_vertical_offset + range_up);
@@ -285,7 +285,7 @@ void SensorsToSpherical::cameraCallback(const sensor_msgs::PointCloud2ConstPtr& 
 	
 	for (m = 0; m<degree_limit ; m++){
 		for(n=0;n<N;n++){
-			sphere_matrix[m][n]= -sonar_down_vertical_offset + range_down;
+			sphere_matrix[m][n]= -sonar_down_vertical_offset - range_down;
 		}
 	}
 

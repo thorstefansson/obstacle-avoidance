@@ -36,6 +36,15 @@ RecordData::RecordData(ros::NodeHandle* nodehandle):nh_(*nodehandle)
     
     //initialize variables here, as needed
     //val_to_remember_=0.0; 
+
+    //just initialize with some bullshit values to prevent segmentation fault
+    command_translational_velocity[0] = 0;
+    command_translational_velocity[1] = 0;
+    command_translational_velocity[2] = 0;
+
+    command_angular_velocity[0] = 0;
+    command_angular_velocity[1] = 0;
+    command_angular_velocity[2] = 0;
     
     // can also do tests/waits to make sure all required services, topics, etc are alive
 }
@@ -51,6 +60,8 @@ void RecordData::initializeSubscribers()
     robot_position_sub = nh_.subscribe("/mavros/local_position/pose", 1, &RecordData::robotPositionCallback, this);
     robot_velocity_sub = nh_.subscribe("/mavros/local_position/velocity", 1, &RecordData::robotVelocityCallback, this);
     robot_local_velocity_sub = nh_.subscribe("/mavros/local_position/odom", 1, &RecordData::robotLocalVelocityCallback, this);
+
+    velocity_command_sub = nh_.subscribe("/mavros/setpoint_velocity/cmd_vel", 1, &RecordData::velocityCommandCallback, this);
 
     // add more subscribers here, as needed
 }
@@ -153,7 +164,9 @@ void RecordData::sphericalMatrixCallback(const std_msgs::Float32MultiArray::Cons
             << ToString(robot_translational_velocity[0]) << " " << ToString(robot_translational_velocity[1]) << " " << ToString(robot_translational_velocity[2]) << " "
             << ToString(robot_angular_velocity[0]) << " " << ToString(robot_angular_velocity[1]) << " " << ToString(robot_angular_velocity[2]) << " "
             << ToString(local_robot_translational_velocity[0]) << " " << ToString(local_robot_translational_velocity[1]) << " " << ToString(local_robot_translational_velocity[2]) << " "
-            << ToString(local_robot_angular_velocity[0]) << " " << ToString(local_robot_angular_velocity[1]) << " " << ToString(local_robot_angular_velocity[2]) << endl;
+            << ToString(local_robot_angular_velocity[0]) << " " << ToString(local_robot_angular_velocity[1]) << " " << ToString(local_robot_angular_velocity[2]) << " "
+            << ToString(command_translational_velocity[0]) << " " << command_translational_velocity[1] << " " << command_translational_velocity[1] << " "
+            << ToString(command_angular_velocity[0]) << " " << ToString(command_angular_velocity[1]) << " " << ToString(command_angular_velocity[2]) << endl;
 
         myfile.close();
     }
@@ -181,6 +194,18 @@ void RecordData::robotVelocityCallback(const geometry_msgs::TwistStampedConstPtr
     robot_angular_velocity[0] = input->twist.angular.x;
     robot_angular_velocity[1] = input->twist.angular.y;
     robot_angular_velocity[2] = input->twist.angular.z;
+}
+
+
+void RecordData::velocityCommandCallback(const geometry_msgs::TwistStampedConstPtr& input) {
+
+    command_translational_velocity[0] = input->twist.linear.x;
+    command_translational_velocity[1] = input->twist.linear.y;
+    command_translational_velocity[2] = input->twist.linear.z;
+
+    command_angular_velocity[0] = input->twist.angular.x;
+    command_angular_velocity[1] = input->twist.angular.y;
+    command_angular_velocity[2] = input->twist.angular.z;
 }
 
 void RecordData::robotLocalVelocityCallback(const nav_msgs::OdometryConstPtr& input) {

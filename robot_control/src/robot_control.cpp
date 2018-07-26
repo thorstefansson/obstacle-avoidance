@@ -71,7 +71,7 @@ RobotControl::RobotControl(ros::NodeHandle* nodehandle):nh_(*nodehandle)
     fixed_position[1] = 0;
     fixed_position[2] = 1;
 
-    // can also do tests/waits to make sure all required services, topics, etc are alive
+    // can also do tests/wait to make sure all required services, topics, etc are alive
 }
 
 //member helper function to set up subscribers;
@@ -739,8 +739,7 @@ void RobotControl::robotPositionCallback(const geometry_msgs::PoseStampedConstPt
                 	set_velocity.twist.linear.z = 1 - robot_position[2];   // very simple P controller, consider changing...
                     //set_pose.pose.position.x = 0;
                     //set_pose.pose.position.y = 0;
-                    //set_pose.pose.position.z = 1;
-                    
+                    //set_pose.pose.position.z = 1;   
                 }
                 else{ // otherwise keep same position if we have no u_sol ..
                 	set_velocity.twist.linear.x = 0.5*(fixed_position[0] - robot_position[0]);

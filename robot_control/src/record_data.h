@@ -58,6 +58,8 @@ private:
     ros::Subscriber robot_velocity_sub;
     ros::Subscriber sphere_matrix_sub;
     ros::Subscriber robot_local_velocity_sub;
+    
+    ros::Subscriber velocity_command_sub;
     //ros::Subscriber nearest_obstacle_sub;
 
     string filename;
@@ -70,7 +72,7 @@ private:
     int m,n,M,N, nearest_obstacle_distance_m, nearest_obstacle_distance_n;
     int spherical_matrix_height, spherical_matrix_width, spherical_matrix_degree_resolution;
 
-    Vector3d robot_position, robot_translational_velocity, robot_angular_velocity, local_robot_translational_velocity, local_robot_angular_velocity;
+    Vector3d robot_position, robot_translational_velocity, robot_angular_velocity, local_robot_translational_velocity, local_robot_angular_velocity, command_translational_velocity, command_angular_velocity;
     double nearest_obstacle_distance;
     bool start_recording;
     
@@ -86,6 +88,9 @@ private:
     void robotPositionCallback(const geometry_msgs::PoseStampedConstPtr& input);
     void robotVelocityCallback(const geometry_msgs::TwistStampedConstPtr& input);
     void robotLocalVelocityCallback(const nav_msgs::OdometryConstPtr& input);
+
+    void velocityCommandCallback(const geometry_msgs::TwistStampedConstPtr& input);
+
     
     //void subscriberCallback(const std_msgs::Float32& message_holder); //prototype for callback of example subscriber
     //prototype for callback for example service

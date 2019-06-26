@@ -3,9 +3,13 @@
 To run:
 
 (
+
 Move octomap_server provided to octomap_mapping
+
 source ~/.bashrc
+
 catkin build
+
 )
 
 roslaunch robot_control motion_computation.launch

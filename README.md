@@ -14,6 +14,9 @@ catkin build
 
 roslaunch robot_control motion_computation.launch
 
+rosservice call /mavros/cmd/arming "value: true" ; rosservice call /mavros/set_mode "base_mode: 0
+custom_mode: 'offboard'"
+
 Doesn't work with python 3.
 
 publish goal location, for example:
